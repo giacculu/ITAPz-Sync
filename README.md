@@ -1,7 +1,7 @@
 # ITAPz — Data Sync
 
 Mod **server-side** per Project Zomboid **Build 42**. Raccoglie le statistiche dei
-giocatori online e le invia via HTTP al sito [ITAPz](https://github.com/giacculu/italian-project-zomboid)
+giocatori online e le passa al sito [ITAPz](https://github.com/giacculu/italian-project-zomboid)
 (profili, XP, rank, classifiche, battlepass).
 
 - **Non modifica il gameplay**, nessun effetto lato client.
@@ -20,49 +20,59 @@ giocatori online e le invia via HTTP al sito [ITAPz](https://github.com/giacculu
 
 Per caricare/aggiornare la mod sul Workshop vedi [WORKSHOP-UPLOAD.md](WORKSHOP-UPLOAD.md).
 
-## Configurazione
+## Come funziona (importante)
 
-La mod è pubblica e i file Workshop sono in sola lettura (sovrascritti agli
-update): **non** modificare il Lua. Ogni server imposta i propri valori creando
-un file di testo nella cartella Zomboid del server:
+Il Lua di **Build 42 non ha alcuna API di rete** (nessun socket, nessun accesso
+Java arbitrario): una mod **non può** fare una HTTP POST. Quindi:
 
 ```
-C:\Users\<Utente>\Zomboid\ITAPz_Sync_config.txt   (Windows)
-~/Zomboid/ITAPz_Sync_config.txt                    (Linux)
+mod (Lua)  ──scrive──>  Zomboid/itapz_sync_data.json  ──POST──>  sito ITAPz
+                                                   ↑
+                                          bridge/itapz-bridge.sh (cron)
 ```
+
+1. La mod scrive il JSON nella cartella Zomboid del server ogni `INTERVAL` secondi.
+2. Il **bridge** (`bridge/itapz-bridge.sh`, solo `curl`) lo invia a
+   `POST {SITE_URL}/api/sync-server-data`. Salta l'invio se il file non è cambiato.
+
+### Configurare il bridge (cron, ogni minuto)
+
+```cron
+* * * * * ZOMBOID_DIR=/home/administrator/Zomboid SITE_URL=http://localhost:3000 API_KEY= /path/itapz-bridge.sh >> /var/log/itapz-bridge.log 2>&1
+```
+
+| Variabile | Default | Note |
+|---|---|---|
+| `ZOMBOID_DIR` | `/home/administrator/Zomboid` | cartella Zomboid del server |
+| `SITE_URL` | `http://localhost:3000` | URL del sito ITAPz |
+| `API_KEY` | (vuota) | deve combaciare con `SYNC_API_KEY` del sito |
+
+### Configurare la mod
+
+I file Workshop sono in sola lettura (sovrascritti agli update): **non**
+modificare il Lua. Per cambiare l'intervallo crea, nella cartella Zomboid del
+server, `ITAPz_Sync_config.txt`:
 
 ```ini
-SITE_URL=https://iltuosito.it   # default: http://localhost:3000
-API_KEY=la_tua_chiave           # deve combaciare con SYNC_API_KEY del sito
-INTERVAL=300                    # secondi tra un invio (default 5 min)
+INTERVAL=60
 ```
 
-Se il file manca si usano i default. Riavvia il server dopo modifiche.
+Se il file manca, l'intervallo è 300s. Riavvia il server dopo modifiche.
 
-## Come invia i dati
-
-Ogni `INTERVAL` secondi, per ogni giocatore online, esegue una **HTTP POST**:
-
-- **URL**: `{SITE_URL}/api/sync-server-data`
-- **Metodo**: `POST`
-- **Header**: `Content-Type: application/json; charset=UTF-8`, `X-API-Key: {API_KEY}`
-- **Fallback**: se la POST fallisce, scrive `itapz_sync_data.json` nella
-  directory del server (per un eventuale bridge esterno, vedi `reporter-bridge/`).
-
-### Body
+### Formato del JSON
 
 ```json
 {
   "players": [
     {
       "name": "Marco_Z",
-      "occupation": "Poliziotto",
+      "occupation": "police",
       "trait": "Coraggioso, Forte",
       "kills": 0,
       "zombies": 1240,
       "daysSurvived": 45,
       "hoursSurvived": 128,
-      "distanceWalked": 120000,
+      "distanceWalked": 0,
       "treesChopped": 80,
       "bulletsFired": 5000,
       "panicAttacks": 12,
@@ -81,23 +91,25 @@ Ogni `INTERVAL` secondi, per ogni giocatore online, esegue una **HTTP POST**:
 
 ### Campi
 
-| Campo | Fonte PZ | Note |
-|-------|----------|------|
+Fonti verificate sull'API **Build 42** (Lua del gioco / JavaDocs):
+
+| Campo | Fonte PZ (B42) | Note |
+|-------|----------------|------|
 | `name` | `getUsername()` | chiave per legare al profilo del sito |
-| `occupation` | `getProfession()` | professione |
-| `trait` | tratti del personaggio | csv |
+| `occupation` | `getDescriptor():getCharacterProfession()` | professione |
+| `trait` | `getCharacterTraits()` | csv |
 | `zombies` | `getZombieKills()` | zombie uccisi |
-| `kills` | `getKills()` | player uccisi (0 in B42, NPC assenti) |
-| `daysSurvived` | `getSurviveDays()` | giorni sopravvissuti |
 | `hoursSurvived` | `getHoursSurvived()` | ore giocate |
-| `distanceWalked` | `getTotalDistanceWalked()` | metri |
+| `daysSurvived` | derivato: `hoursSurvived / 24` | `getSurviveDays()` non esiste in B42 |
 | `treesChopped` | `getStats():getTreesChopped()` | alberi tagliati |
 | `bulletsFired` | `getStats():getBulletsFired()` | colpi sparati |
 | `panicAttacks` | `getStats():getPanicAttacks()` | attacchi di panico |
 | `weight` | `getNutrition():getWeight()` | peso (kg) |
 | `recipesKnown` | `getKnownRecipes():size()` | ricette imparate |
 | `infected` | `getBodyDamage():isInfected()` | infetto dal virus Knox |
-| `skills[]` | 26 perk | `name`, `level`, `maxLevel` |
+| `skills[]` | `PerkFactory.PerkList` + `getPerkLevel(perk)` | skill attive: `name`, `level`, `maxLevel` |
+| `kills` | — | sempre `0`: B42 non espone i player uccisi |
+| `distanceWalked` | — | sempre `0`: B42 non espone la distanza percorsa |
 
 Tutti i getter sono `pcall`-protetti: se un metodo non esiste in una versione
 di B42, il campo resta al default e il sync non si blocca.
@@ -116,7 +128,7 @@ ITAPz_Sync/
 └── 42/
     ├── mod.info, poster.png
     └── media/lua/server/ITAPz_DataSync.lua
-reporter-bridge/                  # bridge Python opzionale (fallback file → sito)
+bridge/itapz-bridge.sh            # invia il JSON al sito (cron + curl)
 workshop.txt                      # metadati Steam Workshop
 ```
 

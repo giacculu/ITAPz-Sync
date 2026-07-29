@@ -1,70 +1,56 @@
 --[[
 ITAPz — Data Sync
-Server-side mod per Project Zomboid Build 42.
-Raccoglie le statistiche dei giocatori e le invia al sito ITAPz.
+Mod server-side per Project Zomboid Build 42.
+
+Raccoglie le statistiche dei giocatori online e le scrive in un file JSON nella
+cartella Zomboid del server. Il Lua di Build 42 NON ha alcuna API di rete
+(niente socket, niente JavaNew): la POST verso il sito la fa il bridge esterno
+(vedi bridge/itapz-bridge.sh nella repo della mod).
+
+File prodotto:  <cartella Zomboid>/itapz_sync_data.json
 --]]
 
 -- ============================ CONFIGURAZIONE ============================
--- La mod è pubblica: NON modificare questo file (i file Workshop vengono
--- sovrascritti agli aggiornamenti). Ogni server imposta i propri valori
--- creando un file di testo nella cartella Zomboid del server:
+-- NON modificare questo file (i file Workshop vengono sovrascritti agli
+-- aggiornamenti). Per cambiare l'intervallo crea, nella cartella Zomboid del
+-- server, il file  ITAPz_Sync_config.txt  con:
 --
---   Zomboid/ITAPz_Sync_config.txt
+--   INTERVAL=60
 --
--- con righe tipo:
---   SITE_URL=https://iltuosito.it
---   API_KEY=la_tua_chiave
---   INTERVAL=300
---
--- Se il file non esiste si usano i default qui sotto.
-local DEFAULTS = {
-    SITE_URL = "http://localhost:3000", -- default: sito sulla stessa VPS
-    API_KEY  = "",                      -- deve combaciare con SYNC_API_KEY del sito
-    INTERVAL = 300,                     -- secondi tra un invio (300 = 5 min)
-}
+local DEFAULT_INTERVAL = 300 -- secondi tra due scritture (300 = 5 min)
+local DATA_FILE = "itapz_sync_data.json"
 
-local function loadConfig()
-    local cfg = { SITE_URL = DEFAULTS.SITE_URL, API_KEY = DEFAULTS.API_KEY, INTERVAL = DEFAULTS.INTERVAL }
-    -- Legge via Java IO da <cartella Zomboid>/ITAPz_Sync_config.txt.
-    -- (getFileReader non è affidabile lato server dedicato.)
+local function loadInterval()
+    local interval = DEFAULT_INTERVAL
     pcall(function()
-        local dir = getCacheDir()
-        if not dir then return end
-        local file = JavaNew("java.io.File", dir .. "/ITAPz_Sync_config.txt")
-        if not file:exists() then return end
-        local reader = JavaNew("java.io.BufferedReader", JavaNew("java.io.FileReader", file))
+        local reader = getFileReader("ITAPz_Sync_config.txt", false)
+        if not reader then return end
         local line = reader:readLine()
         while line ~= nil do
             local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
-            if k == "SITE_URL" and v ~= "" then cfg.SITE_URL = v
-            elseif k == "API_KEY" then cfg.API_KEY = v
-            elseif k == "INTERVAL" then cfg.INTERVAL = tonumber(v) or cfg.INTERVAL end
+            if k == "INTERVAL" then interval = tonumber(v) or interval end
             line = reader:readLine()
         end
         reader:close()
     end)
-    return cfg
+    return interval
 end
 
-local CFG = loadConfig()
-local SITE_URL = CFG.SITE_URL
-local API_KEY  = CFG.API_KEY
-local INTERVAL = CFG.INTERVAL
-local DATA_DIR = nil -- nil = directory di lavoro del server (fallback file JSON)
+local INTERVAL = loadInterval()
 -- =======================================================================
 
---[[ Utility: serialize table to JSON ]]
+--[[ Serializza una tabella Lua in JSON ]]
 local function toJson(t)
     if t == nil then return "null" end
     local typ = type(t)
     if typ == "string" then
-        return '"' .. t:gsub('"', '\\"'):gsub('\n', '\\n'):gsub('\\', '\\\\') .. '"'
+        return '"' .. t:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n') .. '"'
     elseif typ == "number" or typ == "boolean" then
         return tostring(t)
     elseif typ == "table" then
         local parts = {}
         local isArray = true
-        for k, v in pairs(t) do
+        for k, _ in pairs(t) do
             if type(k) ~= "number" then isArray = false; break end
         end
         if isArray then
@@ -74,7 +60,7 @@ local function toJson(t)
             return "[" .. table.concat(parts, ",") .. "]"
         else
             for k, v in pairs(t) do
-                table.insert(parts, toJson(k) .. ":" .. toJson(v))
+                table.insert(parts, toJson(tostring(k)) .. ":" .. toJson(v))
             end
             return "{" .. table.concat(parts, ",") .. "}"
         end
@@ -82,20 +68,22 @@ local function toJson(t)
     return "null"
 end
 
---[[ Get all traits as comma-separated string ]]
-local function getTraits(descriptor)
-    if not descriptor then return "" end
-    local traits = descriptor:getTraits()
-    if not traits then return "" end
+--[[ Tratti del personaggio: player:getCharacterTraits() (B42) ]]
+local function getTraits(player)
     local list = {}
-    for i = 0, traits:size() - 1 do
-        table.insert(list, traits:get(i))
-    end
+    pcall(function()
+        local traits = player:getCharacterTraits()
+        if not traits then return end
+        for i = 0, traits:size() - 1 do
+            local t = traits:get(i)
+            if t then table.insert(list, tostring(t)) end
+        end
+    end)
     return table.concat(list, ", ")
 end
 
---[[ Skill: enumera PerkFactory.PerkList (stesso pattern del gioco in B42).
-     Prende solo le skill attive (child perk, parent ~= Perks.None). ]]
+--[[ Skill: enumera PerkFactory.PerkList (stesso pattern usato dal gioco).
+     Solo le skill attive (child perk, parent ~= Perks.None). ]]
 local function getSkills(player)
     local out = {}
     pcall(function()
@@ -111,7 +99,9 @@ local function getSkills(player)
     return out
 end
 
---[[ Collect data from all online players ]]
+--[[ Raccoglie i dati di tutti i giocatori online.
+     Ogni getter è protetto: un metodo assente in una versione B42 non
+     interrompe la raccolta. ]]
 local function collectPlayerData()
     local players = getOnlinePlayers()
     if not players then return {} end
@@ -120,30 +110,27 @@ local function collectPlayerData()
     for i = 0, players:size() - 1 do
         local p = players:get(i)
         if p then
-            -- OGNI getter è protetto e salvato in una variabile locale. Nessuna
-            -- chiamata a metodo dentro il table.insert finale, così un getter
-            -- mancante in una data versione B42 non aborta mai il sync.
-            -- Solo metodi che ESISTONO in B42 (verificati sui JavaDocs/Lua del gioco).
-            local username, occupation, trait = nil, "", ""
-            local trees, bullets, panic, hours = 0, 0, 0, 0
-            local zombies = 0
+            local username, occupation = nil, ""
+            local trait = ""
+            local trees, bullets, panic, hours, zombies = 0, 0, 0, 0, 0
             local weight, recipes, infected = 0, 0, false
             local skills = {}
 
             pcall(function() username = p:getUsername() end)
+            pcall(function()
+                local desc = p:getDescriptor()
+                if desc then occupation = tostring(desc:getCharacterProfession() or "") end
+            end)
+            pcall(function() trait = getTraits(p) end)
 
-            local desc = nil
-            pcall(function() desc = p:getDescriptor() end)
-            pcall(function() occupation = (desc and desc:getProfession()) or "" end)
-            pcall(function() trait = getTraits(desc) end)
-
-            local stats = nil
-            pcall(function() stats = p:getStats() end)
-            if stats then
-                pcall(function() trees = stats:getTreesChopped() or 0 end)
-                pcall(function() bullets = stats:getBulletsFired() or 0 end)
-                pcall(function() panic = stats:getPanicAttacks() or 0 end)
-            end
+            pcall(function()
+                local stats = p:getStats()
+                if stats then
+                    pcall(function() trees = stats:getTreesChopped() or 0 end)
+                    pcall(function() bullets = stats:getBulletsFired() or 0 end)
+                    pcall(function() panic = stats:getPanicAttacks() or 0 end)
+                end
+            end)
 
             pcall(function() hours = p:getHoursSurvived() or 0 end)
             pcall(function() zombies = p:getZombieKills() or 0 end)
@@ -152,24 +139,24 @@ local function collectPlayerData()
             pcall(function() infected = p:getBodyDamage():isInfected() or false end)
             pcall(function() skills = getSkills(p) end)
 
-            -- giorni sopravvissuti = ore / 24 (getSurviveDays non esiste in B42)
-            local days = math.floor((hours or 0) / 24)
+            -- getSurviveDays non esiste in B42: i giorni si derivano dalle ore
+            local days = math.floor((tonumber(hours) or 0) / 24)
 
             table.insert(results, {
                 name = username or ("Player_" .. i),
                 occupation = occupation,
                 trait = trait,
-                kills = 0,               -- B42: nessun getter "player uccisi"
-                zombies = zombies,
+                kills = 0,          -- B42: nessun getter "player uccisi"
+                zombies = tonumber(zombies) or 0,
                 daysSurvived = days,
-                hoursSurvived = hours,
-                distanceWalked = 0,      -- B42: nessun getter distanza percorsa
-                treesChopped = trees,
-                bulletsFired = bullets,
-                panicAttacks = panic,
-                weight = weight,
-                recipesKnown = recipes,
-                infected = infected,
+                hoursSurvived = math.floor(tonumber(hours) or 0),
+                distanceWalked = 0, -- B42: nessun getter distanza percorsa
+                treesChopped = tonumber(trees) or 0,
+                bulletsFired = tonumber(bullets) or 0,
+                panicAttacks = tonumber(panic) or 0,
+                weight = tonumber(weight) or 0,
+                recipesKnown = tonumber(recipes) or 0,
+                infected = infected and true or false,
                 skills = skills,
             })
         end
@@ -177,87 +164,36 @@ local function collectPlayerData()
     return results
 end
 
---[[ Write JSON to file ]]
-local function writeFile(path, content)
-    local ok, err = pcall(function()
-        local file = JavaNew("java.io.File", path)
-        local dir = file:getParentFile()
-        if dir and not dir:exists() then dir:mkdirs() end
-        local writer = JavaNew("java.io.FileWriter", file)
+--[[ Scrive il JSON nella cartella Zomboid (getFileWriter: unica API file
+     disponibile lato Lua). ]]
+local function writeData(content)
+    local ok = pcall(function()
+        -- (nome, creaSeNonEsiste, append=false -> sovrascrive)
+        local writer = getFileWriter(DATA_FILE, true, false)
+        if not writer then error("writer nil") end
         writer:write(content)
         writer:close()
     end)
-    if not ok then
-        print("ITAPz: Errore scrittura file " .. path .. ": " .. tostring(err))
-    end
+    return ok
 end
 
---[[ HTTP POST via Java URLConnection ]]
-local function postJson(url, jsonStr, apiKey)
-    local ok, code = pcall(function()
-        local urlObj = JavaNew("java.net.URL", url)
-        local conn = urlObj:openConnection()
-        conn:setRequestMethod("POST")
-        conn:setDoOutput(true)
-        conn:setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-        conn:setConnectTimeout(8000)
-        conn:setReadTimeout(8000)
-        if apiKey and apiKey ~= "" then
-            conn:setRequestProperty("X-API-Key", apiKey)
-        end
-
-        local out = conn:getOutputStream()
-        local bytes = jsonStr:getBytes("UTF-8")
-        out:write(bytes)
-        out:close()
-
-        return conn:getResponseCode()
-    end)
-    return code
-end
-
---[[ Main sync function ]]
+--[[ Ciclo principale ]]
 local function syncData()
     local players = collectPlayerData()
-    if #players == 0 then return end
+    local payload = toJson({
+        players = players,
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    })
 
-    local payload = toJson({ players = players, timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ") })
-
-    -- 1. Try HTTP POST
-    local syncUrl = SITE_URL .. "/api/sync-server-data"
-    local httpOk = false
-    local code = postJson(syncUrl, payload, API_KEY)
-    if code and code >= 200 and code < 300 then
-        httpOk = true
-    end
-
-    -- 2. Write file (fallback / for bridge)
-    local filePath = DATA_DIR
-    if not filePath then
-        -- Prova a scrivere nella directory di lavoro del server
-        local ok, dir = pcall(function()
-            return JavaNew("java.io.File", "."):getAbsolutePath()
-        end)
-        if ok then
-            filePath = dir .. "/itapz_sync_data.json"
-        else
-            filePath = "itapz_sync_data.json"
-        end
+    if writeData(payload) then
+        print("ITAPz: Dati scritti su " .. DATA_FILE .. " (" .. #players .. " giocatori)")
     else
-        filePath = filePath .. "/itapz_sync_data.json"
-    end
-    writeFile(filePath, payload)
-
-    if httpOk then
-        print("ITAPz: Sincronizzati " .. #players .. " giocatori (HTTP " .. code .. ")")
-    else
-        print("ITAPz: Dati salvati su file (" .. #players .. " giocatori, HTTP fallito: " .. tostring(code) .. ")")
+        print("ITAPz: ERRORE scrittura " .. DATA_FILE)
     end
 end
 
---[[ Timer basato sul tempo reale.
-     OnTick NON parte sui server dedicati (evento client): si usa
-     EveryOneMinute (evento server-side) e si controlla os.time(). ]]
+--[[ Timer sul tempo reale.
+     OnTick non parte sui server dedicati: si usa EveryOneMinute. ]]
 local lastSyncTime = 0
 
 local function onPeriodic()
@@ -269,7 +205,5 @@ local function onPeriodic()
 end
 
 Events.EveryOneMinute.Add(onPeriodic)
--- Backup: se EveryOneMinute non fosse disponibile, prova anche EveryTenMinutes.
-if Events.EveryTenMinutes then Events.EveryTenMinutes.Add(onPeriodic) end
 
-print("ITAPz: Data Sync caricato (intervallo: " .. INTERVAL .. "s, URL: " .. SITE_URL .. ")")
+print("ITAPz: Data Sync caricato (intervallo: " .. INTERVAL .. "s, file: " .. DATA_FILE .. ")")
