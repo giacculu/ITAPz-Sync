@@ -53,16 +53,6 @@ local INTERVAL = CFG.INTERVAL
 local DATA_DIR = nil -- nil = directory di lavoro del server (fallback file JSON)
 -- =======================================================================
 
---[[ Skill mappings ]]
-local SKILLS = {
-    "Fitness", "Strength", "Sprinting", "Lightfooted", "Nimble", "Sneaking",
-    "Axe", "Blunt", "SmallBlunt", "Spear", "LongBlade", "SmallBlade",
-    "Firearms", "Reloading", "Aiming",
-    "Cooking", "Trapping", "Farming", "Fishing", "Foraging",
-    "Carpentry", "Mechanics", "Electricity", "MetalWelding", "Tailoring",
-    "Doctoring", "FirstAid",
-}
-
 --[[ Utility: serialize table to JSON ]]
 local function toJson(t)
     if t == nil then return "null" end
@@ -104,31 +94,20 @@ local function getTraits(descriptor)
     return table.concat(list, ", ")
 end
 
---[[ Risoluzione perk UNA volta al load.
-     In Build 42 l'API skill è cambiata: Perks.FromString potrebbe non esistere.
-     Risolvo qui in modo protetto; se l'API non c'è, RESOLVED_PERKS resta vuoto e
-     getSkills non chiama mai una funzione nil (niente spam di errori a runtime). ]]
-local RESOLVED_PERKS = {}
-pcall(function()
-    if not (Perks and Perks.FromString) then return end
-    for _, name in ipairs(SKILLS) do
-        local ok, perk = pcall(function() return Perks.FromString(name) end)
-        if ok and perk then
-            table.insert(RESOLVED_PERKS, { name = name, perk = perk })
-        end
-    end
-end)
-
---[[ Get all skill levels ]]
+--[[ Skill: enumera PerkFactory.PerkList (stesso pattern del gioco in B42).
+     Prende solo le skill attive (child perk, parent ~= Perks.None). ]]
 local function getSkills(player)
     local out = {}
-    for _, rp in ipairs(RESOLVED_PERKS) do
-        local ok, level = pcall(function() return player:getPerkLevel(rp.perk) or 0 end)
-        local okm, maxLevel = pcall(function() return player:getMaxPerkLevel(rp.perk) or 10 end)
-        if ok then
-            table.insert(out, { name = rp.name, level = level, maxLevel = (okm and maxLevel) or 10 })
+    pcall(function()
+        local list = PerkFactory.PerkList
+        for i = 0, list:size() - 1 do
+            local perk = list:get(i)
+            if perk and perk:getParent() ~= Perks.None then
+                local level = player:getPerkLevel(perk) or 0
+                table.insert(out, { name = perk:getName(), level = level, maxLevel = 10 })
+            end
         end
-    end
+    end)
     return out
 end
 
@@ -144,9 +123,10 @@ local function collectPlayerData()
             -- OGNI getter è protetto e salvato in una variabile locale. Nessuna
             -- chiamata a metodo dentro il table.insert finale, così un getter
             -- mancante in una data versione B42 non aborta mai il sync.
+            -- Solo metodi che ESISTONO in B42 (verificati sui JavaDocs/Lua del gioco).
             local username, occupation, trait = nil, "", ""
-            local trees, bullets, panic, distance, hours = 0, 0, 0, 0, 0
-            local kills, zombies, days = 0, 0, 0
+            local trees, bullets, panic, hours = 0, 0, 0, 0
+            local zombies = 0
             local weight, recipes, infected = 0, 0, false
             local skills = {}
 
@@ -165,25 +145,25 @@ local function collectPlayerData()
                 pcall(function() panic = stats:getPanicAttacks() or 0 end)
             end
 
-            pcall(function() distance = p:getTotalDistanceWalked() or 0 end)
             pcall(function() hours = p:getHoursSurvived() or 0 end)
-            pcall(function() kills = p:getKills() or 0 end)
             pcall(function() zombies = p:getZombieKills() or 0 end)
-            pcall(function() days = p:getSurviveDays() or 0 end)
             pcall(function() weight = p:getNutrition():getWeight() or 0 end)
             pcall(function() recipes = p:getKnownRecipes():size() or 0 end)
             pcall(function() infected = p:getBodyDamage():isInfected() or false end)
             pcall(function() skills = getSkills(p) end)
 
+            -- giorni sopravvissuti = ore / 24 (getSurviveDays non esiste in B42)
+            local days = math.floor((hours or 0) / 24)
+
             table.insert(results, {
                 name = username or ("Player_" .. i),
                 occupation = occupation,
                 trait = trait,
-                kills = kills,
+                kills = 0,               -- B42: nessun getter "player uccisi"
                 zombies = zombies,
                 daysSurvived = days,
                 hoursSurvived = hours,
-                distanceWalked = distance,
+                distanceWalked = 0,      -- B42: nessun getter distanza percorsa
                 treesChopped = trees,
                 bulletsFired = bullets,
                 panicAttacks = panic,
