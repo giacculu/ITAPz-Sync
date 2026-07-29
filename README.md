@@ -22,23 +22,38 @@ Per caricare/aggiornare la mod sul Workshop vedi [WORKSHOP-UPLOAD.md](WORKSHOP-U
 
 ## Come funziona (importante)
 
-Il Lua di **Build 42 non ha alcuna API di rete** (nessun socket, nessun accesso
-Java arbitrario): una mod **non può** fare una HTTP POST. Quindi:
+Il Lua **server-side** di Build 42 non ha API di rete **né** scrittura file
+(`getFileWriter` è client-only: sul server dedicato restituisce `nil`). L'unico
+canale disponibile è il **log del server**:
 
 ```
-mod (Lua) ──scrive──> Zomboid/Lua/itapz_sync_data.json  ──POST──>  sito ITAPz
-                                                   ↑
-                                          bridge/itapz-bridge.sh (cron)
+mod (Lua) ──print──> Logs/*DebugLog-server.txt ──POST──> sito ITAPz
+                                             ↑
+                                  bridge/itapz-bridge.sh (cron)
 ```
 
-1. La mod scrive il JSON in `<Zomboid>/Lua/itapz_sync_data.json` ogni `INTERVAL` secondi (getFileWriter lavora nella sottocartella `Lua/`).
-2. Il **bridge** (`bridge/itapz-bridge.sh`, solo `curl`) lo invia a
-   `POST {SITE_URL}/api/sync-server-data`. Salta l'invio se il file non è cambiato.
+1. La mod stampa nel log, ogni `INTERVAL` secondi, un blocco:
+   ```
+   ITAPZ_SYNC_BEGIN <timestamp> players=<n>
+   ITAPZ_PLAYER {"name":"...","zombies":123,...}
+   ITAPZ_SYNC_END
+   ```
+   (una riga per giocatore, per non superare limiti di lunghezza)
+2. Il **bridge** (`bridge/itapz-bridge.sh`, solo `awk`+`curl`) estrae l'ultimo
+   blocco, compone il payload e lo invia a `POST {SITE_URL}/api/sync-server-data`.
+   Salta l'invio se i dati non sono cambiati.
 
-### Configurare il bridge (cron, ogni minuto)
+### Installare il bridge
+
+```bash
+curl -o /usr/local/bin/itapz-bridge.sh   https://raw.githubusercontent.com/giacculu/ITAPz-Sync/master/bridge/itapz-bridge.sh
+chmod +x /usr/local/bin/itapz-bridge.sh
+```
+
+Cron (ogni minuto):
 
 ```cron
-* * * * * ZOMBOID_DIR=/home/administrator/Zomboid SITE_URL=http://localhost:3000 API_KEY= /path/itapz-bridge.sh >> /var/log/itapz-bridge.log 2>&1
+* * * * * ZOMBOID_DIR=/home/administrator/Zomboid SITE_URL=http://localhost:3000 /usr/local/bin/itapz-bridge.sh >> /var/log/itapz-bridge.log 2>&1
 ```
 
 | Variabile | Default | Note |
@@ -46,12 +61,13 @@ mod (Lua) ──scrive──> Zomboid/Lua/itapz_sync_data.json  ──POST──
 | `ZOMBOID_DIR` | `/home/administrator/Zomboid` | cartella Zomboid del server |
 | `SITE_URL` | `http://localhost:3000` | URL del sito ITAPz |
 | `API_KEY` | (vuota) | deve combaciare con `SYNC_API_KEY` del sito |
+| `LOG_FILE` | ultimo `*DebugLog-server.txt` | log da leggere |
 
 ### Configurare la mod
 
 I file Workshop sono in sola lettura (sovrascritti agli update): **non**
-modificare il Lua. Per cambiare l'intervallo crea, nella cartella Zomboid del
-server, `Lua/ITAPz_Sync_config.txt`:
+modificare il Lua. Per cambiare l'intervallo crea
+`<Zomboid>/Lua/ITAPz_Sync_config.txt`:
 
 ```ini
 INTERVAL=60
@@ -59,7 +75,7 @@ INTERVAL=60
 
 Se il file manca, l'intervallo è 300s. Riavvia il server dopo modifiche.
 
-### Formato del JSON
+### Payload inviato dal bridge
 
 ```json
 {
@@ -128,7 +144,7 @@ ITAPz_Sync/
 └── 42/
     ├── mod.info, poster.png
     └── media/lua/server/ITAPz_DataSync.lua
-bridge/itapz-bridge.sh            # invia il JSON al sito (cron + curl)
+bridge/itapz-bridge.sh            # estrae i dati dal log e li invia (cron + curl)
 workshop.txt                      # metadati Steam Workshop
 ```
 

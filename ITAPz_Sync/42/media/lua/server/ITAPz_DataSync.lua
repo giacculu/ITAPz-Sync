@@ -2,13 +2,18 @@
 ITAPz — Data Sync
 Mod server-side per Project Zomboid Build 42.
 
-Raccoglie le statistiche dei giocatori online e le scrive in un file JSON nella
-cartella Zomboid del server. Il Lua di Build 42 NON ha alcuna API di rete
-(niente socket, niente JavaNew): la POST verso il sito la fa il bridge esterno
-(vedi bridge/itapz-bridge.sh nella repo della mod).
+Raccoglie le statistiche dei giocatori online e le stampa nel log del server
+fra marcatori. Il Lua server-side di Build 42 non ha API di rete NE' scrittura
+file (getFileWriter e' client-only: sul server dedicato torna nil), quindi il
+log e' l'unico canale disponibile.
 
-File prodotto:  <cartella Zomboid>/Lua/itapz_sync_data.json
-                (getFileWriter/getFileReader lavorano nella sottocartella Lua/)
+Il bridge esterno (bridge/itapz-bridge.sh) estrae i dati dal log e li invia al
+sito con una POST.
+
+Formato nel log:
+  ITAPZ_SYNC_BEGIN <timestamp> players=<n>
+  ITAPZ_PLAYER {"name":...}
+  ITAPZ_SYNC_END
 --]]
 
 -- ============================ CONFIGURAZIONE ============================
@@ -19,8 +24,7 @@ File prodotto:  <cartella Zomboid>/Lua/itapz_sync_data.json
 --
 --   INTERVAL=60
 --
-local DEFAULT_INTERVAL = 300 -- secondi tra due scritture (300 = 5 min)
-local DATA_FILE = "itapz_sync_data.json"
+local DEFAULT_INTERVAL = 300 -- secondi tra due emissioni (300 = 5 min)
 
 local function loadInterval()
     local interval = DEFAULT_INTERVAL
@@ -166,31 +170,30 @@ local function collectPlayerData()
     return results
 end
 
---[[ Scrive il JSON nella cartella Zomboid (getFileWriter: unica API file
-     disponibile lato Lua). ]]
-local function writeData(content)
-    local ok = pcall(function()
-        -- (nome, creaSeNonEsiste, append=false -> sovrascrive)
-        local writer = getFileWriter(DATA_FILE, true, false)
-        if not writer then error("writer nil") end
-        writer:write(content)
-        writer:close()
-    end)
-    return ok
+--[[ Output dei dati.
+
+     In Build 42 il Lua SERVER-SIDE non ha né API di rete né scrittura file
+     (getFileWriter è client-only: sul server dedicato restituisce nil). L'unico
+     canale disponibile è il log del server: la mod stampa i dati fra marcatori e
+     il bridge esterno (bridge/itapz-bridge.sh) li estrae dal log e fa la POST.
+
+     Un giocatore per riga, per non superare limiti di lunghezza. ]]
+local function emitData()
+    local players = collectPlayerData()
+    local stamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+
+    print("ITAPZ_SYNC_BEGIN " .. stamp .. " players=" .. #players)
+    for _, p in ipairs(players) do
+        print("ITAPZ_PLAYER " .. toJson(p))
+    end
+    print("ITAPZ_SYNC_END")
 end
 
 --[[ Ciclo principale ]]
 local function syncData()
-    local players = collectPlayerData()
-    local payload = toJson({
-        players = players,
-        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-    })
-
-    if writeData(payload) then
-        print("ITAPz: Dati scritti su " .. DATA_FILE .. " (" .. #players .. " giocatori)")
-    else
-        print("ITAPz: ERRORE scrittura " .. DATA_FILE)
+    local ok = pcall(emitData)
+    if not ok then
+        print("ITAPz: ERRORE durante la raccolta dati")
     end
 end
 
@@ -249,8 +252,8 @@ hook("OnServerStarted", function()
     syncData()
 end)
 
-print("ITAPz: Data Sync caricato (intervallo: " .. INTERVAL .. "s, file: " .. DATA_FILE .. ")")
+print("ITAPz: Data Sync caricato (intervallo: " .. INTERVAL .. "s, output: log del server)")
 
--- Scrittura immediata al load: crea subito il file (anche a server vuoto) e
--- mostra nel log se la scrittura funziona, senza attendere il timer.
+-- Emissione immediata al load: i dati compaiono subito nel log, senza attendere
+-- il timer (utile anche a server vuoto per verificare che tutto funzioni).
 syncData()
