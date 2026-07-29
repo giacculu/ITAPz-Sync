@@ -1,0 +1,10 @@
+version=1
+id=3774019032
+title=ITAPz Data Sync
+description=Mod server-side per il server Italian Project Zomboid (Build 42).
+description=
+description=Raccoglie le statistiche dei giocatori e le invia al sito italianpz.it per profili, XP, rank e classifiche.
+description=
+description=Solo server. Non modifica il gameplay.
+tags=Multiplayer;
+visibility=public

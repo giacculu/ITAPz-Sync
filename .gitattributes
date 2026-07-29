@@ -1,0 +1,3 @@
+*.info text eol=crlf
+workshop.txt text eol=crlf
+*.lua text eol=crlf
