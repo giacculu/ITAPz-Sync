@@ -206,7 +206,13 @@ local function realTime()
     return t
 end
 
+local announced = false
+
 local function onPeriodic()
+    if not announced then
+        announced = true
+        print("ITAPz: timer attivo (primo trigger ricevuto)")
+    end
     local now = realTime()
     if now then
         if now - lastSyncTime >= INTERVAL then
@@ -224,6 +230,27 @@ local function onPeriodic()
     end
 end
 
-Events.EveryOneMinute.Add(onPeriodic)
+-- Registra un handler solo se l'evento esiste (evita errori al caricamento)
+local function hook(name, fn)
+    if Events and Events[name] and Events[name].Add then
+        Events[name].Add(fn)
+        return true
+    end
+    return false
+end
+
+-- Timer principale (scatta col tempo di gioco)
+hook("EveryOneMinute", onPeriodic)
+-- Backup: se EveryOneMinute non scatta (server vuoto/tempo fermo)
+hook("EveryTenMinutes", onPeriodic)
+-- All'avvio del server: scrive subito, così il file esiste sempre
+hook("OnServerStarted", function()
+    lastSyncTime = realTime() or 0
+    syncData()
+end)
 
 print("ITAPz: Data Sync caricato (intervallo: " .. INTERVAL .. "s, file: " .. DATA_FILE .. ")")
+
+-- Scrittura immediata al load: crea subito il file (anche a server vuoto) e
+-- mostra nel log se la scrittura funziona, senza attendere il timer.
+syncData()
