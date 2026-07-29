@@ -7,13 +7,15 @@ cartella Zomboid del server. Il Lua di Build 42 NON ha alcuna API di rete
 (niente socket, niente JavaNew): la POST verso il sito la fa il bridge esterno
 (vedi bridge/itapz-bridge.sh nella repo della mod).
 
-File prodotto:  <cartella Zomboid>/itapz_sync_data.json
+File prodotto:  <cartella Zomboid>/Lua/itapz_sync_data.json
+                (getFileWriter/getFileReader lavorano nella sottocartella Lua/)
 --]]
 
 -- ============================ CONFIGURAZIONE ============================
 -- NON modificare questo file (i file Workshop vengono sovrascritti agli
--- aggiornamenti). Per cambiare l'intervallo crea, nella cartella Zomboid del
--- server, il file  ITAPz_Sync_config.txt  con:
+-- aggiornamenti). Per cambiare l'intervallo crea il file
+--   <cartella Zomboid>/Lua/ITAPz_Sync_config.txt
+-- con:
 --
 --   INTERVAL=60
 --

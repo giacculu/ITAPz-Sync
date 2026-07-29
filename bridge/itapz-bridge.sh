@@ -18,11 +18,14 @@ ZOMBOID_DIR="${ZOMBOID_DIR:-/home/administrator/Zomboid}"
 SITE_URL="${SITE_URL:-http://localhost:3000}"
 API_KEY="${API_KEY:-}"
 
-DATA_FILE="$ZOMBOID_DIR/itapz_sync_data.json"
+# getFileWriter del gioco scrive in <Zomboid>/Lua/ ; si controlla anche la root
+# per sicurezza.
+DATA_FILE="$ZOMBOID_DIR/Lua/itapz_sync_data.json"
+[ -f "$DATA_FILE" ] || DATA_FILE="$ZOMBOID_DIR/itapz_sync_data.json"
 STATE_FILE="$ZOMBOID_DIR/.itapz_bridge_last"
 
 if [ ! -f "$DATA_FILE" ]; then
-  echo "$(date '+%F %T') nessun $DATA_FILE (la mod non ha ancora scritto)"
+  echo "$(date '+%F %T') nessun itapz_sync_data.json in $ZOMBOID_DIR/Lua/ (la mod non ha ancora scritto)"
   exit 0
 fi
 

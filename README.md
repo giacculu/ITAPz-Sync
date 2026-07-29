@@ -26,12 +26,12 @@ Il Lua di **Build 42 non ha alcuna API di rete** (nessun socket, nessun accesso
 Java arbitrario): una mod **non può** fare una HTTP POST. Quindi:
 
 ```
-mod (Lua)  ──scrive──>  Zomboid/itapz_sync_data.json  ──POST──>  sito ITAPz
+mod (Lua) ──scrive──> Zomboid/Lua/itapz_sync_data.json  ──POST──>  sito ITAPz
                                                    ↑
                                           bridge/itapz-bridge.sh (cron)
 ```
 
-1. La mod scrive il JSON nella cartella Zomboid del server ogni `INTERVAL` secondi.
+1. La mod scrive il JSON in `<Zomboid>/Lua/itapz_sync_data.json` ogni `INTERVAL` secondi (getFileWriter lavora nella sottocartella `Lua/`).
 2. Il **bridge** (`bridge/itapz-bridge.sh`, solo `curl`) lo invia a
    `POST {SITE_URL}/api/sync-server-data`. Salta l'invio se il file non è cambiato.
 
@@ -51,7 +51,7 @@ mod (Lua)  ──scrive──>  Zomboid/itapz_sync_data.json  ──POST──> 
 
 I file Workshop sono in sola lettura (sovrascritti agli update): **non**
 modificare il Lua. Per cambiare l'intervallo crea, nella cartella Zomboid del
-server, `ITAPz_Sync_config.txt`:
+server, `Lua/ITAPz_Sync_config.txt`:
 
 ```ini
 INTERVAL=60
