@@ -53,9 +53,6 @@ local INTERVAL = CFG.INTERVAL
 local DATA_DIR = nil -- nil = directory di lavoro del server (fallback file JSON)
 -- =======================================================================
 
-local tickCounter = 0
-local TICK_RATE = 60 -- PZ gira a 60 tick/sec
-
 --[[ Skill mappings ]]
 local SKILLS = {
     "Fitness", "Strength", "Sprinting", "Lightfooted", "Nimble", "Sneaking",
@@ -263,15 +260,21 @@ local function syncData()
     end
 end
 
---[[ Timer-based execution ]]
-local function onTick()
-    tickCounter = tickCounter + 1
-    if tickCounter >= INTERVAL * TICK_RATE then
-        tickCounter = 0
+--[[ Timer basato sul tempo reale.
+     OnTick NON parte sui server dedicati (evento client): si usa
+     EveryOneMinute (evento server-side) e si controlla os.time(). ]]
+local lastSyncTime = 0
+
+local function onPeriodic()
+    local now = os.time()
+    if now - lastSyncTime >= INTERVAL then
+        lastSyncTime = now
         syncData()
     end
 end
 
-Events.OnTick.Add(onTick)
+Events.EveryOneMinute.Add(onPeriodic)
+-- Backup: se EveryOneMinute non fosse disponibile, prova anche EveryTenMinutes.
+if Events.EveryTenMinutes then Events.EveryTenMinutes.Add(onPeriodic) end
 
 print("ITAPz: Data Sync caricato (intervallo: " .. INTERVAL .. "s, URL: " .. SITE_URL .. ")")
