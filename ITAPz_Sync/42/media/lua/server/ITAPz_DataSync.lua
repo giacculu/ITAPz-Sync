@@ -192,15 +192,33 @@ local function syncData()
     end
 end
 
---[[ Timer sul tempo reale.
-     OnTick non parte sui server dedicati: si usa EveryOneMinute. ]]
+--[[ Timer. OnTick non parte sui server dedicati: si usa EveryOneMinute.
+     Si preferisce il tempo reale (os.time); se non disponibile si contano
+     i trigger dell'evento. ]]
 local lastSyncTime = 0
+local ticks = 0
+
+local function realTime()
+    local t = nil
+    pcall(function() t = os.time() end)
+    return t
+end
 
 local function onPeriodic()
-    local now = os.time()
-    if now - lastSyncTime >= INTERVAL then
-        lastSyncTime = now
-        syncData()
+    local now = realTime()
+    if now then
+        if now - lastSyncTime >= INTERVAL then
+            lastSyncTime = now
+            syncData()
+        end
+    else
+        -- fallback: un sync ogni ceil(INTERVAL/60) trigger
+        ticks = ticks + 1
+        local every = math.max(1, math.floor(INTERVAL / 60))
+        if ticks >= every then
+            ticks = 0
+            syncData()
+        end
     end
 end
 
