@@ -108,16 +108,15 @@ end
 local function getSkills(player)
     local out = {}
     for _, name in ipairs(SKILLS) do
-        local perk = Perks.FromString(name)
-        if perk then
-            local level = player:getPerkLevel(perk)
-            local maxLevel = player:getMaxPerkLevel(perk)
-            table.insert(out, {
-                name = name,
-                level = level,
-                maxLevel = maxLevel,
-            })
-        end
+        -- Ogni perk protetto: nomi diversi tra versioni B42 non bloccano il resto.
+        pcall(function()
+            local perk = Perks.FromString(name)
+            if perk then
+                local level = player:getPerkLevel(perk) or 0
+                local maxLevel = player:getMaxPerkLevel(perk) or 10
+                table.insert(out, { name = name, level = level, maxLevel = maxLevel })
+            end
+        end)
     end
     return out
 end
@@ -131,15 +130,24 @@ local function collectPlayerData()
     for i = 0, players:size() - 1 do
         local p = players:get(i)
         if p then
-            local username = p:getUsername()
-            local desc = p:getDescriptor()
-
-            -- In Build 42 alcuni getter potrebbero non esistere: leggi TUTTO in
-            -- modo protetto (pcall) così un metodo mancante non blocca il sync.
+            -- OGNI getter è protetto e salvato in una variabile locale. Nessuna
+            -- chiamata a metodo dentro il table.insert finale, così un getter
+            -- mancante in una data versione B42 non aborta mai il sync.
+            local username, occupation, trait = nil, "", ""
             local trees, bullets, panic, distance, hours = 0, 0, 0, 0, 0
             local kills, zombies, days = 0, 0, 0
+            local weight, recipes, infected = 0, 0, false
+            local skills = {}
 
-            local stats = p:getStats()
+            pcall(function() username = p:getUsername() end)
+
+            local desc = nil
+            pcall(function() desc = p:getDescriptor() end)
+            pcall(function() occupation = (desc and desc:getProfession()) or "" end)
+            pcall(function() trait = getTraits(desc) end)
+
+            local stats = nil
+            pcall(function() stats = p:getStats() end)
             if stats then
                 pcall(function() trees = stats:getTreesChopped() or 0 end)
                 pcall(function() bullets = stats:getBulletsFired() or 0 end)
@@ -148,22 +156,18 @@ local function collectPlayerData()
 
             pcall(function() distance = p:getTotalDistanceWalked() or 0 end)
             pcall(function() hours = p:getHoursSurvived() or 0 end)
-            -- "kills" = player uccisi (PvP). PZ non espone un getter affidabile:
-            -- se getKills() non esiste resta 0 (server PvE, di norma 0).
             pcall(function() kills = p:getKills() or 0 end)
             pcall(function() zombies = p:getZombieKills() or 0 end)
             pcall(function() days = p:getSurviveDays() or 0 end)
-
-            -- Stat extra (tutte protette: default sicuro se il getter non esiste)
-            local weight, recipes, infected = 0, 0, false
             pcall(function() weight = p:getNutrition():getWeight() or 0 end)
             pcall(function() recipes = p:getKnownRecipes():size() or 0 end)
             pcall(function() infected = p:getBodyDamage():isInfected() or false end)
+            pcall(function() skills = getSkills(p) end)
 
             table.insert(results, {
                 name = username or ("Player_" .. i),
-                occupation = desc and desc:getProfession() or "",
-                trait = getTraits(desc),
+                occupation = occupation,
+                trait = trait,
                 kills = kills,
                 zombies = zombies,
                 daysSurvived = days,
@@ -175,7 +179,7 @@ local function collectPlayerData()
                 weight = weight,
                 recipesKnown = recipes,
                 infected = infected,
-                skills = getSkills(p),
+                skills = skills,
             })
         end
     end
