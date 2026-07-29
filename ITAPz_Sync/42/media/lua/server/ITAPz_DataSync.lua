@@ -104,19 +104,30 @@ local function getTraits(descriptor)
     return table.concat(list, ", ")
 end
 
+--[[ Risoluzione perk UNA volta al load.
+     In Build 42 l'API skill è cambiata: Perks.FromString potrebbe non esistere.
+     Risolvo qui in modo protetto; se l'API non c'è, RESOLVED_PERKS resta vuoto e
+     getSkills non chiama mai una funzione nil (niente spam di errori a runtime). ]]
+local RESOLVED_PERKS = {}
+pcall(function()
+    if not (Perks and Perks.FromString) then return end
+    for _, name in ipairs(SKILLS) do
+        local ok, perk = pcall(function() return Perks.FromString(name) end)
+        if ok and perk then
+            table.insert(RESOLVED_PERKS, { name = name, perk = perk })
+        end
+    end
+end)
+
 --[[ Get all skill levels ]]
 local function getSkills(player)
     local out = {}
-    for _, name in ipairs(SKILLS) do
-        -- Ogni perk protetto: nomi diversi tra versioni B42 non bloccano il resto.
-        pcall(function()
-            local perk = Perks.FromString(name)
-            if perk then
-                local level = player:getPerkLevel(perk) or 0
-                local maxLevel = player:getMaxPerkLevel(perk) or 10
-                table.insert(out, { name = name, level = level, maxLevel = maxLevel })
-            end
-        end)
+    for _, rp in ipairs(RESOLVED_PERKS) do
+        local ok, level = pcall(function() return player:getPerkLevel(rp.perk) or 0 end)
+        local okm, maxLevel = pcall(function() return player:getMaxPerkLevel(rp.perk) or 10 end)
+        if ok then
+            table.insert(out, { name = rp.name, level = level, maxLevel = (okm and maxLevel) or 10 })
+        end
     end
     return out
 end
