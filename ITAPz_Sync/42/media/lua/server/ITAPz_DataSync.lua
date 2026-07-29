@@ -25,9 +25,14 @@ local DEFAULTS = {
 
 local function loadConfig()
     local cfg = { SITE_URL = DEFAULTS.SITE_URL, API_KEY = DEFAULTS.API_KEY, INTERVAL = DEFAULTS.INTERVAL }
+    -- Legge via Java IO da <cartella Zomboid>/ITAPz_Sync_config.txt.
+    -- (getFileReader non è affidabile lato server dedicato.)
     pcall(function()
-        local reader = getFileReader("ITAPz_Sync_config.txt", false)
-        if not reader then return end
+        local dir = getCacheDir()
+        if not dir then return end
+        local file = JavaNew("java.io.File", dir .. "/ITAPz_Sync_config.txt")
+        if not file:exists() then return end
+        local reader = JavaNew("java.io.BufferedReader", JavaNew("java.io.FileReader", file))
         local line = reader:readLine()
         while line ~= nil do
             local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
