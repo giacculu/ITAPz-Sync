@@ -163,6 +163,11 @@ chmod +x /usr/local/bin/itapz-rewards.py
 Solo libreria standard Python 3 (protocollo Source RCON implementato nello
 script). Non esporre la porta RCON su internet: il bridge gira in locale.
 
+**Giocatore offline**: `additem` funziona solo sui connessi. Lo script chiede
+prima la lista online (comando `players`) e consegna solo a chi c'e'; gli altri
+restano in coda `PENDING` e ricevono l'oggetto al primo accesso. Nessuna
+ricompensa va persa.
+
 ## Privacy
 
 Invia solo dati di gioco e lo username Steam pubblico. Nessuna password, nessun

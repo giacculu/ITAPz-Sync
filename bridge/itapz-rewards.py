@@ -88,6 +88,21 @@ class Rcon:
         _, _, body = self._recv()
         return body.strip()
 
+    def online_players(self):
+        """Elenco dei giocatori connessi (comando `players`).
+
+        Output tipico:
+            Players connected (1):
+            -giacculu
+        """
+        reply = self.command("players")
+        names = []
+        for line in reply.splitlines():
+            line = line.strip()
+            if line.startswith("-"):
+                names.append(line[1:].strip())
+        return names
+
     def close(self):
         try:
             self.sock.close()
@@ -131,10 +146,24 @@ def main():
         return 1
 
     try:
+        # additem funziona solo su giocatori connessi: chi è offline resta in
+        # coda (PENDING) e verrà servito al prossimo accesso.
+        try:
+            online = rcon.online_players()
+        except Exception as e:
+            print(f"ERRORE lettura giocatori online: {e}", file=sys.stderr)
+            return 1
+        online_lower = {n.lower() for n in online}
+
         for d in deliveries:
             player = d["playerName"]
             item = d["itemId"]
             qty = int(d.get("quantity", 1) or 1)
+
+            if player.lower() not in online_lower:
+                print(f"IN ATTESA: {player} offline, {item} resta in coda")
+                continue
+
             cmd = f'additem "{player}" "{item}" {qty}'
             try:
                 reply = rcon.command(cmd)
