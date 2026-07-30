@@ -133,14 +133,27 @@ local function collectWorld()
     pcall(function()
         local cm = getClimateManager()
         if not cm then return end
-        pcall(function() w.season = cm:getSeasonName() end)
-        pcall(function() w.temperature = math.floor((cm:getTemperature() or 0) * 10) / 10 end)
-        pcall(function() w.rain = math.floor((cm:getPrecipitationIntensity() or 0) * 100) / 100 end)
-        pcall(function() w.snow = math.floor((cm:getSnowStrength() or 0) * 100) / 100 end)
-        pcall(function() w.fog = math.floor((cm:getFogIntensity() or 0) * 100) / 100 end)
-        pcall(function() w.wind = math.floor((cm:getWindPower() or 0) * 100) / 100 end)
-        pcall(function() w.thunder = math.floor((cm:getThunderStorm() or 0) * 100) / 100 end)
+        -- tonumber() e' obbligatorio, non difensivo: un getter che restituisce
+        -- un oggetto Java invece di un numero fa fallire la moltiplicazione
+        -- ("__mul not defined for operands"), e il pcall che la avvolge NON
+        -- basta — PZ registra comunque lo stack trace e accende l'icona di
+        -- errore in gioco a ogni ciclo di sync.
+        local function num(v, decimali)
+            local n = tonumber(v)
+            if not n then return 0 end
+            return math.floor(n * decimali) / decimali
+        end
+
+        pcall(function() w.season = tostring(cm:getSeasonName() or "") end)
+        pcall(function() w.temperature = num(cm:getTemperature(), 10) end)
+        pcall(function() w.rain = num(cm:getPrecipitationIntensity(), 100) end)
+        pcall(function() w.snow = num(cm:getSnowStrength(), 100) end)
+        pcall(function() w.fog = num(cm:getFogIntensity(), 100) end)
+        pcall(function() w.wind = num(cm:getWindPower(), 100) end)
         pcall(function() w.isRaining = cm:isRaining() and true or false end)
+        -- niente `thunder`: getThunderStorm() restituisce un oggetto
+        -- ThunderStorm (getClouds/triggerThunderEvent), non un'intensita'.
+        -- B42 non espone un valore numerico, quindi il campo resta a 0.
     end)
 
     return w

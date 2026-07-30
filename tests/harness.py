@@ -30,6 +30,15 @@ end
 function __fire(name, a, b, c)
   for _, fn in ipairs(__handlers[name] or {}) do fn(a, b, c) end
 end
+
+-- `instanceof` e' un globale di Project Zomboid, usato dal codice del gioco
+-- stesso per interrogare il tipo di un oggetto senza chiamare metodi che
+-- possono sollevare eccezioni. Qui un oggetto finto dichiara la propria
+-- classe nel campo `__class`.
+function instanceof(v, className)
+  if type(v) ~= "table" and type(v) ~= "userdata" then return false end
+  return v.__class == className
+end
 """
 
 

@@ -107,13 +107,39 @@ def test_first_riporta_il_giocatore_se_disponibile():
     # e' un oggetto con getUsername(), la riga FIRST deve nominarlo.
     probe = load_probe(ALL_EVENTS)
     probe._lua.execute("""
-    __test_player = {}
+    __test_player = { __class = "IsoPlayer" }
     function __test_player:getUsername() return "Mario" end
     """)
     player = probe._lua.globals()["__test_player"]
     probe.fire("OnPlayerDeath", player)
     assert probe.has("ITAPZ_PROBE_FIRST OnPlayerDeath")
     assert probe.has("args=player:Mario")
+
+
+def test_first_nomina_lo_zombie_senza_chiamare_getclass():
+    # Il caso che in produzione riempiva il log di stack trace: su un IsoZombie
+    # getClass():getSimpleName() solleva un'eccezione dentro Kahlua, e il pcall
+    # la cattura ma PZ la registra lo stesso accendendo l'icona di errore.
+    probe = load_probe(ALL_EVENTS)
+    probe._lua.execute("""
+    __test_zombie = { __class = "IsoZombie" }
+    function __test_zombie:getClass() error("attempted index: getSimpleName") end
+    function __test_zombie:getUsername() error("non esiste sugli zombie") end
+    """)
+    zombie = probe._lua.globals()["__test_zombie"]
+    probe.fire("OnZombieDead", zombie)
+    assert probe.has("args=zombie,nil,nil")
+
+
+def test_argomento_di_tipo_sconosciuto_non_esplode():
+    probe = load_probe(ALL_EVENTS)
+    probe._lua.execute("""
+    __test_boh = { __class = "QualcosAltro" }
+    function __test_boh:getClass() error("boom") end
+    """)
+    probe.fire("OnMakeItem", probe._lua.globals()["__test_boh"])
+    assert probe.has("ITAPZ_PROBE_FIRST OnMakeItem")
+    assert probe.has("args=table,nil,nil")
 
 
 def test_first_riporta_nil_senza_argomenti():

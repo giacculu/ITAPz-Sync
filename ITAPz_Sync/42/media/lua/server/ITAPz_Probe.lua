@@ -55,14 +55,33 @@ local function report()
     print("ITAPZ_PROBE_REPORT " .. table.concat(parts, " "))
 end
 
+--[[ Descrive un argomento di evento senza chiamare metodi che possano
+     sollevare eccezioni.
+
+     `getClass():getSimpleName()` fallisce dentro Kahlua su un IsoZombie
+     ("attempted index: getSimpleName of non-table"), e il pcall NON basta:
+     PZ registra comunque lo stack trace nel log e accende l'icona di errore
+     in gioco. `instanceof` e' il test sicuro, ed e' quello che usa il codice
+     del gioco stesso. ]]
 local function describe(v)
     local t = type(v)
     if t ~= "userdata" and t ~= "table" then return t end
-    local s = nil
-    pcall(function() s = v:getUsername() end)
-    if s then return "player:" .. s end
-    pcall(function() s = v:getClass():getSimpleName() end)
-    return s or t
+
+    local out = t
+    pcall(function()
+        if instanceof(v, "IsoPlayer") then
+            out = "player:" .. tostring(v:getUsername())
+        elseif instanceof(v, "IsoZombie") then
+            out = "zombie"
+        elseif instanceof(v, "IsoGameCharacter") then
+            out = "character"
+        elseif instanceof(v, "InventoryItem") then
+            out = "item"
+        elseif instanceof(v, "BaseVehicle") then
+            out = "vehicle"
+        end
+    end)
+    return out
 end
 
 local function record(name, a, b, c)
