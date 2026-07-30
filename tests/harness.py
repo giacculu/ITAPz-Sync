@@ -111,9 +111,15 @@ def load_probe(available_events, moddata=None, moddata_broken=False):
     return Probe(lua)
 
 
+# Deve restare allineato a CANDIDATES in ITAPz_Probe.lua: il test
+# test_registra_gli_hook_presenti fallisce se qui ne manca uno.
 ALL_EVENTS = [
-    "OnPlayerDeath", "LevelPerk", "OnHitZombie", "OnZombieDead",
-    "OnMakeItem", "OnDoTileBuilding", "OnEnterVehicle",
-    "OnPlayerAttackFinished", "OnCreatePlayer",
+    "OnHitZombie", "OnZombieDead",
+    "OnPlayerDeath", "OnCharacterDeath", "OnCreatePlayer", "OnCreateLivingCharacter",
+    "LevelPerk", "AddXP",
+    "OnDoTileBuilding2", "OnDoTileBuilding3", "OnObjectAdded", "OnDestroyIsoThumpable",
+    "OnWeaponHitCharacter", "OnWeaponHitTree", "OnPlayerAttackFinished", "OnPlayerGetDamage",
+    "OnExitVehicle", "OnUseVehicle", "OnSwitchVehicleSeat", "OnMechanicActionDone",
+    "OnSeeNewRoom", "OnItemFound", "OnNewFire",
     "EveryTenMinutes",
 ]

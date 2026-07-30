@@ -32,20 +32,53 @@ righe `FIRST` il problema è la sonda che non osserva quello che crede — non
 gli hook candidati. In quel caso non fidarsi di nessun risultato negativo
 riportato dagli altri eventi finché la sonda stessa non viene corretta.
 
-## Prova da fare
+## Risultati del primo giro (30/07/2026)
 
-1. Entrare nel server e uccidere qualche zombie → attendersi `OnHitZombie` e
-   `OnZombieDead`.
-2. Fabbricare un oggetto → `OnMakeItem`.
-3. Costruire un muro → `OnDoTileBuilding`.
-4. Salire di livello in un'abilità → `LevelPerk`.
-5. Entrare in un veicolo → `OnEnterVehicle`.
-6. Morire → `OnPlayerDeath`.
-7. Creare un personaggio nuovo (primo accesso, oppure dopo la morte) →
-   `OnCreatePlayer`.
-8. Colpire uno zombie senza ucciderlo → `OnPlayerAttackFinished`
-   (probabilmente già coperto dal punto sulle uccisioni, ma va reso
-   esplicito perché l'esito vada tracciato).
+| evento | esito | note |
+|---|---|---|
+| `EveryTenMinutes` | **scatta** | controllo positivo: i risultati negativi sotto sono affidabili |
+| `OnHitZombie` | **scatta** | `args=userdata,player:<nome>,userdata` — porta il giocatore |
+| `OnZombieDead` | **scatta** | solo lo zombie, nessuna attribuzione al giocatore |
+| `OnEnterVehicle` | non scatta | rimosso dai candidati |
+| `OnMakeItem` | non scatta | **non esiste più in B42**: assente dall'elenco eventi di pzwiki, e il gioco stesso lo tiene commentato in `XpSystem/XpUpdate.lua` |
+| `OnDoTileBuilding` | non scatta | **nome deprecato**: B42 usa `OnDoTileBuilding2` e `OnDoTileBuilding3` |
+
+Il ModData globale **persiste** attraverso i riavvii, ma solo per le scritture
+fatte dopo `OnInitGlobalModData`: quelle fatte al caricamento del file vengono
+scartate quando PZ deserializza il salvataggio.
+
+Conseguenza per gli achievement: `OnHitZombie` è l'unico evento di combattimento
+che dice **chi** ha colpito, quindi è quello su cui costruire. E **Build 42 non
+espone alcun evento di crafting**, quindi "fabbrica N oggetti" non si può fare a
+eventi.
+
+## Prova da fare (secondo giro)
+
+I candidati sono stati sostituiti con i nomi corretti presi dall'elenco
+"Current Lua events" di pzwiki. Da provare:
+
+1. **Uccidere zombie** → `OnWeaponHitCharacter`, `OnPlayerAttackFinished`,
+   `OnPlayerGetDamage` (farsi colpire).
+2. **Costruire un muro o un tavolo** → `OnDoTileBuilding2`,
+   `OnDoTileBuilding3`, `OnObjectAdded`.
+3. **Distruggere una costruzione** → `OnDestroyIsoThumpable`.
+4. **Tagliare un albero** → `OnWeaponHitTree`.
+5. **Salire di livello in un'abilità** → `LevelPerk`, `AddXP` (quest'ultimo
+   dovrebbe scattare a ogni guadagno di esperienza, non solo al livello).
+6. **Guidare un veicolo**, uscirne, cambiare posto, riparare →
+   `OnExitVehicle`, `OnUseVehicle`, `OnSwitchVehicleSeat`,
+   `OnMechanicActionDone`.
+7. **Entrare in una stanza mai vista** → `OnSeeNewRoom` (serve per gli
+   achievement di esplorazione).
+8. **Raccogliere/foraggiare** → `OnItemFound`.
+9. **Accendere un fuoco** → `OnNewFire`.
+10. **Morire** → `OnPlayerDeath`, `OnCharacterDeath`.
+11. **Creare un personaggio nuovo** → `OnCreatePlayer`,
+    `OnCreateLivingCharacter`.
+
+Per ognuno conta soprattutto la parte `args=`: se non contiene
+`player:<nome>`, l'evento non basta da solo per un achievement, perché non
+dice a chi attribuirlo.
 
 ## Verifica del ModData
 

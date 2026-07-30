@@ -11,16 +11,55 @@ si legge dalla console del pannello admin.
 Va rimossa quando gli hook utili sono stati identificati.
 --]]
 
+--[[ Candidati, secondo giro.
+
+     Il primo giro sul server ha dato: OnHitZombie scatta e porta il giocatore
+     come secondo argomento, OnZombieDead scatta ma senza attribuzione,
+     OnEnterVehicle / OnMakeItem / OnDoTileBuilding non scattano mai.
+
+     I nomi qui sotto sono presi dall'elenco "Current Lua events" di pzwiki,
+     che spiega due di quei silenzi: OnMakeItem non esiste piu' in Build 42
+     (il gioco stesso lo tiene commentato in XpSystem/XpUpdate.lua), e
+     OnDoTileBuilding e' stato sostituito dalle varianti numerate 2 e 3.
+     Sono stati tolti insieme a OnEnterVehicle, gia' provato senza esito. ]]
 local CANDIDATES = {
-    "OnPlayerDeath",
-    "LevelPerk",
+    -- confermati funzionanti nel primo giro
     "OnHitZombie",
     "OnZombieDead",
-    "OnMakeItem",
-    "OnDoTileBuilding",
-    "OnEnterVehicle",
-    "OnPlayerAttackFinished",
+
+    -- morte e creazione personaggio: ancora da provare
+    "OnPlayerDeath",
+    "OnCharacterDeath",
     "OnCreatePlayer",
+    "OnCreateLivingCharacter",
+
+    -- progressione abilita'
+    "LevelPerk",
+    "AddXP",
+
+    -- costruzione: i nomi corretti in Build 42
+    "OnDoTileBuilding2",
+    "OnDoTileBuilding3",
+    "OnObjectAdded",
+    "OnDestroyIsoThumpable",
+
+    -- combattimento e attribuzione dell'uccisione
+    "OnWeaponHitCharacter",
+    "OnWeaponHitTree",
+    "OnPlayerAttackFinished",
+    "OnPlayerGetDamage",
+
+    -- veicoli: alternative a OnEnterVehicle, che non scatta
+    "OnExitVehicle",
+    "OnUseVehicle",
+    "OnSwitchVehicleSeat",
+    "OnMechanicActionDone",
+
+    -- esplorazione e raccolta
+    "OnSeeNewRoom",
+    "OnItemFound",
+    "OnNewFire",
+
     -- Controllo positivo: ITAPz_DataSync.lua dimostra gia' in produzione che
     -- questo evento scatta su un server dedicato. Se non compare una riga
     -- ITAPZ_PROBE_FIRST anche per lui, il problema e' la sonda stessa (non

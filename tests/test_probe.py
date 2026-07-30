@@ -29,9 +29,9 @@ def test_primo_scatto_annunciato_una_sola_volta():
 def test_hook_diversi_annunciati_separatamente():
     probe = load_probe(ALL_EVENTS)
     probe.fire("OnPlayerDeath")
-    probe.fire("OnMakeItem")
+    probe.fire("OnObjectAdded")
     assert probe.has("ITAPZ_PROBE_FIRST OnPlayerDeath")
-    assert probe.has("ITAPZ_PROBE_FIRST OnMakeItem")
+    assert probe.has("ITAPZ_PROBE_FIRST OnObjectAdded")
 
 
 def test_hook_mai_scattato_non_annunciato():
@@ -137,8 +137,8 @@ def test_argomento_di_tipo_sconosciuto_non_esplode():
     __test_boh = { __class = "QualcosAltro" }
     function __test_boh:getClass() error("boom") end
     """)
-    probe.fire("OnMakeItem", probe._lua.globals()["__test_boh"])
-    assert probe.has("ITAPZ_PROBE_FIRST OnMakeItem")
+    probe.fire("OnObjectAdded", probe._lua.globals()["__test_boh"])
+    assert probe.has("ITAPZ_PROBE_FIRST OnObjectAdded")
     assert probe.has("args=table,nil,nil")
 
 
