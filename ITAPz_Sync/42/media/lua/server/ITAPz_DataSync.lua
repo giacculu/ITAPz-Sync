@@ -74,15 +74,22 @@ local function toJson(t)
     return "null"
 end
 
---[[ Tratti del personaggio: player:getCharacterTraits() (B42) ]]
+--[[ Tratti del personaggio (B42):
+     player:getCharacterTraits():getKnownTraits() -> lista, trait:getName() ]]
 local function getTraits(player)
     local list = {}
     pcall(function()
         local traits = player:getCharacterTraits()
         if not traits then return end
-        for i = 0, traits:size() - 1 do
-            local t = traits:get(i)
-            if t then table.insert(list, tostring(t)) end
+        local known = traits:getKnownTraits()
+        if not known then return end
+        for i = 0, known:size() - 1 do
+            local t = known:get(i)
+            if t then
+                local name = nil
+                pcall(function() name = t:getName() end)
+                table.insert(list, name or tostring(t))
+            end
         end
     end)
     return table.concat(list, ", ")
@@ -118,7 +125,7 @@ local function collectPlayerData()
         if p then
             local username, occupation = nil, ""
             local trait = ""
-            local trees, bullets, panic, hours, zombies = 0, 0, 0, 0, 0
+            local hours, zombies = 0, 0
             local weight, recipes, infected = 0, 0, false
             local skills = {}
 
@@ -128,15 +135,6 @@ local function collectPlayerData()
                 if desc then occupation = tostring(desc:getCharacterProfession() or "") end
             end)
             pcall(function() trait = getTraits(p) end)
-
-            pcall(function()
-                local stats = p:getStats()
-                if stats then
-                    pcall(function() trees = stats:getTreesChopped() or 0 end)
-                    pcall(function() bullets = stats:getBulletsFired() or 0 end)
-                    pcall(function() panic = stats:getPanicAttacks() or 0 end)
-                end
-            end)
 
             pcall(function() hours = p:getHoursSurvived() or 0 end)
             pcall(function() zombies = p:getZombieKills() or 0 end)
@@ -157,9 +155,9 @@ local function collectPlayerData()
                 daysSurvived = days,
                 hoursSurvived = math.floor(tonumber(hours) or 0),
                 distanceWalked = 0, -- B42: nessun getter distanza percorsa
-                treesChopped = tonumber(trees) or 0,
-                bulletsFired = tonumber(bullets) or 0,
-                panicAttacks = tonumber(panic) or 0,
+                treesChopped = 0,   -- B42: getStats() non espone questi contatori
+                bulletsFired = 0,
+                panicAttacks = 0,
                 weight = tonumber(weight) or 0,
                 recipesKnown = tonumber(recipes) or 0,
                 infected = infected and true or false,

@@ -113,19 +113,17 @@ Fonti verificate sull'API **Build 42** (Lua del gioco / JavaDocs):
 |-------|----------------|------|
 | `name` | `getUsername()` | chiave per legare al profilo del sito |
 | `occupation` | `getDescriptor():getCharacterProfession()` | professione |
-| `trait` | `getCharacterTraits()` | csv |
+| `trait` | `getCharacterTraits():getKnownTraits()` | csv dei nomi |
 | `zombies` | `getZombieKills()` | zombie uccisi |
 | `hoursSurvived` | `getHoursSurvived()` | ore giocate |
 | `daysSurvived` | derivato: `hoursSurvived / 24` | `getSurviveDays()` non esiste in B42 |
-| `treesChopped` | `getStats():getTreesChopped()` | alberi tagliati |
-| `bulletsFired` | `getStats():getBulletsFired()` | colpi sparati |
-| `panicAttacks` | `getStats():getPanicAttacks()` | attacchi di panico |
 | `weight` | `getNutrition():getWeight()` | peso (kg) |
 | `recipesKnown` | `getKnownRecipes():size()` | ricette imparate |
 | `infected` | `getBodyDamage():isInfected()` | infetto dal virus Knox |
 | `skills[]` | `PerkFactory.PerkList` + `getPerkLevel(perk)` | skill attive: `name`, `level`, `maxLevel` |
 | `kills` | — | sempre `0`: B42 non espone i player uccisi |
 | `distanceWalked` | — | sempre `0`: B42 non espone la distanza percorsa |
+| `treesChopped`, `bulletsFired`, `panicAttacks` | — | sempre `0`: in B42 `getStats()` non espone questi contatori |
 
 Tutti i getter sono `pcall`-protetti: se un metodo non esiste in una versione
 di B42, il campo resta al default e il sync non si blocca.
