@@ -44,7 +44,11 @@ fi
 # quindi si prende tutto dal primo '{' in poi.
 PLAYERS=$(printf '%s' "$BLOCK" | grep 'ITAPZ_PLAYER' | sed 's/^.*ITAPZ_PLAYER //' | sed 's/[[:space:]]*$//' | sed 's/\.$//' | paste -sd, -)
 
-printf '{"players":[%s]}' "$PLAYERS" > "$TMP_PAYLOAD"
+# Timestamp del blocco: rende ogni ciclo distinto, così l'anti-duplicato non
+# blocca l'heartbeat quando ci sono 0 giocatori (payload altrimenti identico).
+STAMP=$(printf '%s' "$BLOCK" | grep -m1 'ITAPZ_SYNC_BEGIN' | sed 's/^.*ITAPZ_SYNC_BEGIN //' | awk '{print $1}')
+
+printf '{"players":[%s],"timestamp":"%s"}' "$PLAYERS" "$STAMP" > "$TMP_PAYLOAD"
 
 # Salta se identico all'ultimo invio riuscito
 CURRENT_HASH=$(md5sum "$TMP_PAYLOAD" | cut -d' ' -f1)
