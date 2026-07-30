@@ -59,6 +59,32 @@ local function register(name)
 end
 
 print("ITAPZ_PROBE avvio " .. stamp())
+
+--[[ Verifica che il ModData globale sopravviva ai riavvii.
+     Se dopo un riavvio del server questa riga riporta avvii=2, i contatori
+     degli achievement possono viverci dentro. ]]
+local MODDATA_KEY = "ITAPz_Probe"
+
+local function checkModData()
+    local boots = nil
+    pcall(function()
+        local md = ModData.getOrCreate(MODDATA_KEY)
+        if md then
+            boots = (tonumber(md.boots) or 0) + 1
+            md.boots = boots
+            md.lastBoot = stamp()
+        end
+    end)
+
+    if boots then
+        print("ITAPZ_PROBE_MODDATA avvii=" .. boots .. " stato=ok")
+    else
+        print("ITAPZ_PROBE_MODDATA stato=non-disponibile")
+    end
+end
+
+checkModData()
+
 for _, name in ipairs(CANDIDATES) do
     register(name)
 end

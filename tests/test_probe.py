@@ -38,3 +38,26 @@ def test_hook_mai_scattato_non_annunciato():
     probe = load_probe(ALL_EVENTS)
     probe.fire("OnPlayerDeath")
     assert not probe.has("ITAPZ_PROBE_FIRST LevelPerk")
+
+
+def test_primo_avvio_conta_uno():
+    probe = load_probe(ALL_EVENTS)
+    assert probe.has("ITAPZ_PROBE_MODDATA avvii=1 stato=ok")
+
+
+def test_riavvio_incrementa_il_contatore():
+    # simula un riavvio: il ModData contiene gia' un avvio precedente
+    probe = load_probe(ALL_EVENTS, moddata={"ITAPz_Probe": {"boots": 1}})
+    assert probe.has("ITAPZ_PROBE_MODDATA avvii=2 stato=ok")
+
+
+def test_contatore_scritto_nel_moddata():
+    probe = load_probe(ALL_EVENTS, moddata={"ITAPz_Probe": {"boots": 4}})
+    assert probe.moddata["ITAPz_Probe"]["boots"] == 5
+
+
+def test_moddata_rotto_non_blocca_la_sonda():
+    probe = load_probe(ALL_EVENTS, moddata_broken=True)
+    assert probe.has("ITAPZ_PROBE_MODDATA stato=non-disponibile")
+    # gli hook devono essere stati registrati lo stesso
+    assert probe.has("ITAPZ_PROBE_HOOK OnPlayerDeath registrato")
