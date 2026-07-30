@@ -67,6 +67,7 @@ SERVERDATA_EXECCOMMAND = 2
 class Rcon:
     def __init__(self, host, port, password, timeout=10):
         self.sock = socket.create_connection((host, port), timeout=timeout)
+        self.timeout = timeout
         self.req_id = 0
         self._auth(password)
 
@@ -102,9 +103,37 @@ class Rcon:
                 raise RuntimeError("password RCON errata")
 
     def command(self, cmd):
+        """Esegue un comando e restituisce l'output completo.
+
+        PZ spezza le risposte lunghe su piu' pacchetti (e la prima puo' essere
+        vuota): leggerne uno solo restituiva stringhe vuote, per cui `players`
+        risultava sempre a zero. Si continua a leggere finche' il socket tace.
+        """
         self._send(SERVERDATA_EXECCOMMAND, cmd)
-        _, _, body = self._recv()
-        return body.strip()
+
+        chunks = []
+        try:
+            _, _, body = self._recv()
+            chunks.append(body)
+        except (socket.timeout, TimeoutError):
+            return ""
+
+        self.sock.settimeout(0.6)
+        try:
+            while True:
+                _, _, more = self._recv()
+                if not more:
+                    break
+                chunks.append(more)
+        except (socket.timeout, TimeoutError, OSError, struct.error):
+            pass
+        finally:
+            try:
+                self.sock.settimeout(self.timeout)
+            except OSError:
+                pass
+
+        return "".join(chunks).strip()
 
     def close(self):
         try:
@@ -194,7 +223,11 @@ _last_beat = 0.0
 
 def collect_status():
     """Il server e' su se RCON risponde. Il conteggio giocatori esce dalla
-    stessa chiamata: "Players connected (2):" seguito da una riga per nome."""
+    stessa chiamata: "Players connected (2):" seguito da una riga per nome.
+
+    Se l'output non e' interpretabile si manda players=None invece di zero: il
+    sito ripiega sul conteggio della mod, meglio di dichiarare il server vuoto
+    per un formato di risposta inatteso."""
     try:
         out = run_rcon("players")
     except Exception:
@@ -202,10 +235,17 @@ def collect_status():
 
     m = re.search(r"\((\d+)\)", out)
     if m:
-        count = int(m.group(1))
-    else:
-        count = len([l for l in out.splitlines() if l.strip().startswith("-")])
-    return {"online": True, "players": count}
+        return {"online": True, "players": int(m.group(1))}
+
+    lines = [l for l in out.splitlines() if l.strip().startswith("-")]
+    if lines:
+        return {"online": True, "players": len(lines)}
+
+    if re.search(r"players? connected", out, re.I):
+        return {"online": True, "players": 0}
+
+    print(f"battito: output di 'players' non interpretabile: {out[:120]!r}", file=sys.stderr)
+    return {"online": True, "players": None}
 
 
 def push_heartbeat():
