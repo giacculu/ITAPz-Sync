@@ -67,10 +67,14 @@ local CANDIDATES = {
     "EveryTenMinutes",
 }
 
--- Un rapporto ogni N scatti complessivi. OnHitZombie scatta a ogni colpo:
--- senza soglia il log, che e' anche il canale delle statistiche, sarebbe
--- inutilizzabile.
-local REPORT_EVERY = 25
+--[[ Intervallo minimo fra due rapporti, in secondi reali.
+
+     Prima la soglia era a scatti (uno ogni 25): sul server OnPlayerGetDamage
+     e' scattato 660 volte in pochi minuti, quindi il rapporto usciva piu'
+     volte al secondo e annegava il log — che e' anche il canale delle
+     statistiche verso il sito. Contare il tempo invece degli scatti rende il
+     costo indipendente da quanto sono rumorosi gli eventi. ]]
+local REPORT_MIN_SECONDS = 60
 
 local registered = {}
 local fired = {}
@@ -82,7 +86,13 @@ local function stamp()
     return s
 end
 
-local totalFires = 0
+local lastReport = 0
+
+local function now()
+    local t = 0
+    pcall(function() t = os.time() or 0 end)
+    return t
+end
 
 local function report()
     local parts = {}
@@ -123,19 +133,36 @@ local function describe(v)
     return out
 end
 
+--[[ Un evento puo' scattare sia per un giocatore sia per uno zombie
+     (OnCharacterDeath lo fa). La prima riga cattura solo il primo dei due:
+     quando arriva un giocatore su un evento gia' visto, vale una riga in piu',
+     una sola volta, altrimenti l'attribuzione resterebbe sconosciuta. ]]
+local playerSeen = {}
+
 local function record(name, a, b, c)
     fired[name] = (fired[name] or 0) + 1
-    if not firstFire[name] then
-        firstFire[name] = stamp()
-        local args = ""
+
+    local args = nil
+    local function describeArgs()
         pcall(function()
-            args = " args=" .. describe(a) .. "," .. describe(b) .. "," .. describe(c)
+            args = "args=" .. describe(a) .. "," .. describe(b) .. "," .. describe(c)
         end)
-        print("ITAPZ_PROBE_FIRST " .. name .. " " .. firstFire[name] .. args)
+        return args or "args=?"
     end
 
-    totalFires = totalFires + 1
-    if totalFires % REPORT_EVERY == 0 then
+    if not firstFire[name] then
+        firstFire[name] = stamp()
+        print("ITAPZ_PROBE_FIRST " .. name .. " " .. firstFire[name] .. " " .. describeArgs())
+    elseif not playerSeen[name] then
+        if describeArgs():find("player:", 1, true) then
+            playerSeen[name] = true
+            print("ITAPZ_PROBE_PLAYER " .. name .. " " .. stamp() .. " " .. args)
+        end
+    end
+
+    local t = now()
+    if t - lastReport >= REPORT_MIN_SECONDS then
+        lastReport = t
         report()
     end
 end

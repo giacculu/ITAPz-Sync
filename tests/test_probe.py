@@ -74,26 +74,39 @@ def test_moddata_fase_init_dopo_oninitglobalmoddata():
     assert probe.has("ITAPZ_PROBE_MODDATA fase=init avvii=2")
 
 
-def test_rapporto_dopo_la_soglia_di_scatti():
+def test_rapporto_dopo_la_soglia_di_tempo():
     probe = load_probe(ALL_EVENTS)
-    for _ in range(25):
-        probe.fire("OnHitZombie")
+    probe.advance(60)
+    probe.fire("OnHitZombie")
     assert probe.has("ITAPZ_PROBE_REPORT")
-    assert probe.has("OnHitZombie=25")
+    assert probe.has("OnHitZombie=1")
 
 
 def test_rapporto_non_a_ogni_scatto():
+    # Il caso reale che ha motivato il passaggio al tempo: sul server
+    # OnPlayerGetDamage e' scattato 660 volte in pochi minuti e con la vecchia
+    # soglia a scatti il rapporto usciva piu' volte al secondo, annegando il
+    # log che e' anche il canale delle statistiche verso il sito.
     probe = load_probe(ALL_EVENTS)
-    for _ in range(75):
-        probe.fire("OnHitZombie")
-    # con soglia 25: rapporti al 25esimo, 50esimo e 75esimo
-    assert probe.count("ITAPZ_PROBE_REPORT") == 3
+    probe.advance(60)
+    for _ in range(600):
+        probe.fire("OnPlayerGetDamage")
+    assert probe.count("ITAPZ_PROBE_REPORT") == 1
+
+
+def test_rapporto_si_ripete_dopo_altro_tempo():
+    probe = load_probe(ALL_EVENTS)
+    probe.advance(60)
+    probe.fire("OnHitZombie")
+    probe.advance(60)
+    probe.fire("OnHitZombie")
+    assert probe.count("ITAPZ_PROBE_REPORT") == 2
 
 
 def test_rapporto_include_gli_hook_mai_scattati():
     probe = load_probe(ALL_EVENTS)
-    for _ in range(25):
-        probe.fire("OnHitZombie")
+    probe.advance(60)
+    probe.fire("OnHitZombie")
     assert probe.has("LevelPerk=0")
 
 
@@ -148,3 +161,26 @@ def test_first_riporta_nil_senza_argomenti():
     probe = load_probe(ALL_EVENTS)
     probe.fire("OnPlayerDeath")
     assert probe.has("args=nil,nil,nil")
+
+
+def test_riga_player_quando_un_giocatore_arriva_dopo():
+    # OnCharacterDeath scatta sia per gli zombie sia per i giocatori: sul
+    # server la prima riga ha catturato uno zombie, lasciando sconosciuta
+    # l'attribuzione. La riga PLAYER copre quel caso, una volta sola.
+    probe = load_probe(ALL_EVENTS)
+    probe._lua.execute("""
+    __z = { __class = "IsoZombie" }
+    __p = { __class = "IsoPlayer" }
+    function __p:getUsername() return "Bob" end
+    """)
+    g = probe._lua.globals()
+    probe.fire("OnCharacterDeath", g["__z"])
+    assert probe.has("ITAPZ_PROBE_FIRST OnCharacterDeath")
+    assert not probe.has("ITAPZ_PROBE_PLAYER")
+
+    probe.fire("OnCharacterDeath", g["__p"])
+    assert probe.has("ITAPZ_PROBE_PLAYER OnCharacterDeath")
+    assert probe.has("args=player:Bob,nil,nil")
+
+    probe.fire("OnCharacterDeath", g["__p"])
+    assert probe.count("ITAPZ_PROBE_PLAYER OnCharacterDeath") == 1

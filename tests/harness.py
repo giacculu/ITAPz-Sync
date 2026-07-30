@@ -39,6 +39,11 @@ function instanceof(v, className)
   if type(v) ~= "table" and type(v) ~= "userdata" then return false end
   return v.__class == className
 end
+
+-- Orologio controllabile: la soglia fra due rapporti e' in secondi reali,
+-- e un test non puo' aspettarli davvero.
+__now = 1000
+os.time = function() return __now end
 """
 
 
@@ -66,6 +71,11 @@ class Probe:
     def fire(self, event_name, *args):
         padded = list(args) + [None] * (3 - len(args))
         self._lua.globals()["__fire"](event_name, *padded[:3])
+
+    def advance(self, seconds):
+        """Fa avanzare l'orologio visto dalla sonda."""
+        g = self._lua.globals()
+        g["__now"] = g["__now"] + seconds
 
     def has(self, needle):
         return any(needle in line for line in self.lines)

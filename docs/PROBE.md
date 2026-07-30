@@ -32,6 +32,54 @@ righe `FIRST` il problema è la sonda che non osserva quello che crede — non
 gli hook candidati. In quel caso non fidarsi di nessun risultato negativo
 riportato dagli altri eventi finché la sonda stessa non viene corretta.
 
+## Risultati del secondo giro (30/07/2026) — conclusivi
+
+Provato tutto: uccisioni, costruzione, morte, creazione personaggio, livelli,
+veicoli, esplorazione.
+
+### Utilizzabili per gli achievement (portano il giocatore)
+
+| evento | argomenti | serve per |
+|---|---|---|
+| `OnWeaponHitCharacter` | `player:<nome>`, bersaglio, **arma** | uccisioni con un'arma specifica — il migliore del gruppo |
+| `AddXP` | `player:<nome>`, abilità, quantità | ogni guadagno di esperienza |
+| `LevelPerk` | `player:<nome>`, abilità, livello | salita di livello in un'abilità |
+| `OnHitZombie` | zombie, `player:<nome>`, arma | colpi inferti |
+| `OnCreateLivingCharacter` | `player:<nome>` | creazione personaggio |
+
+### Scattano ma senza dire a chi attribuirli
+
+`OnZombieDead`, `OnCharacterDeath`, `OnDestroyIsoThumpable`, `OnSeeNewRoom`,
+`OnPlayerGetDamage`.
+
+`OnCharacterDeath` scatta sia per gli zombie sia per i giocatori: la riga
+`ITAPZ_PROBE_PLAYER` serve proprio a catturare il caso del giocatore, che la
+riga `FIRST` si perde quando il primo a morire è uno zombie.
+
+### Non scattano mai
+
+`OnPlayerDeath` (usare `OnCharacterDeath`), `OnCreatePlayer` (usare
+`OnCreateLivingCharacter`), `OnDoTileBuilding2`, `OnDoTileBuilding3`,
+`OnObjectAdded`, `OnWeaponHitTree`, `OnPlayerAttackFinished`, `OnUseVehicle`,
+`OnMechanicActionDone`, `OnItemFound`, `OnNewFire`.
+
+### Non esistono in Build 42
+
+`OnExitVehicle`, `OnSwitchVehicleSeat` (riportati `ASSENTE`).
+
+### Conseguenze per il progetto
+
+- **Costruzione: nessun evento utilizzabile.** Né `OnDoTileBuilding2/3` né
+  `OnObjectAdded` scattano, e nell'elenco completo dei 227 eventi correnti non
+  ce n'è altri. Gli achievement "costruisci N muri" non si possono fare.
+- **Crafting: nessun evento, punto.** Build 42 non ne espone. Si può ripiegare
+  sulle ricette conosciute, che sono già nelle statistiche sincronizzate.
+- **Veicoli: nessun evento utilizzabile.**
+- **Esplorazione:** `OnSeeNewRoom` scatta ma non dice chi, quindi resta da fare
+  con le coordinate nel sync, come previsto dal design originale.
+- **Il ModData persiste** (`avvii=4` dopo tre riavvii), ma solo per le
+  scritture fatte dopo `OnInitGlobalModData`.
+
 ## Risultati del primo giro (30/07/2026)
 
 | evento | esito | note |
