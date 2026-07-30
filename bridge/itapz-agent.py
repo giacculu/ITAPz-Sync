@@ -26,10 +26,12 @@ Variabili:
                   /home/administrator/Zomboid/server-console.txt)
   LOG_LINES       righe di log inviate      (default 300)
   POLL_SECONDS    intervallo in loop        (default 3)
+  HEARTBEAT_SECONDS  intervallo del battito (default 15)
 """
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -52,6 +54,7 @@ PZ_CONFIG = os.environ.get(
 PZ_LOG = os.environ.get("PZ_LOG", "/home/administrator/Zomboid/server-console.txt")
 LOG_LINES = int(os.environ.get("LOG_LINES", "300"))
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
+HEARTBEAT_SECONDS = int(os.environ.get("HEARTBEAT_SECONDS", "15"))
 
 # --- RCON (protocollo Source, solo libreria standard) -----------------------
 import socket
@@ -186,6 +189,38 @@ def write_config(text):
     return f"Salvato. Backup: {backup}. Riavvia il server per applicare."
 
 
+_last_beat = 0.0
+
+
+def collect_status():
+    """Il server e' su se RCON risponde. Il conteggio giocatori esce dalla
+    stessa chiamata: "Players connected (2):" seguito da una riga per nome."""
+    try:
+        out = run_rcon("players")
+    except Exception:
+        return {"online": False, "players": 0}
+
+    m = re.search(r"\((\d+)\)", out)
+    if m:
+        count = int(m.group(1))
+    else:
+        count = len([l for l in out.splitlines() if l.strip().startswith("-")])
+    return {"online": True, "players": count}
+
+
+def push_heartbeat():
+    """Battito verso il sito. Non a ogni giro: RCON ogni 3s sarebbe inutile."""
+    global _last_beat
+    now = time.monotonic()
+    if now - _last_beat < HEARTBEAT_SECONDS:
+        return
+    _last_beat = now
+    try:
+        http_json(f"{SITE_URL}/api/server-heartbeat", method="POST", payload=collect_status())
+    except Exception as e:
+        print(f"ERRORE invio battito: {e}", file=sys.stderr)
+
+
 _last_log_hash = None
 
 
@@ -239,6 +274,7 @@ def execute(cmd):
 
 
 def tick():
+    push_heartbeat()
     push_log()
 
     try:
