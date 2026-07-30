@@ -10,7 +10,7 @@
 # Variabili:
 #   ZOMBOID_DIR  cartella Zomboid del server (default /home/administrator/Zomboid)
 #   SITE_URL     URL del sito ITAPz          (default http://localhost:3000)
-#   API_KEY      deve combaciare con SYNC_API_KEY del sito (opzionale)
+#   API_KEY      deve combaciare con SYNC_API_KEY del sito (obbligatoria)
 #   LOG_FILE     log da leggere (default: il DebugLog-server piu' recente)
 
 set -eu

@@ -17,7 +17,7 @@ Uso (servizio systemd, vedi bridge/systemd/):
 
 Variabili:
   SITE_URL        URL del sito ITAPz        (default http://localhost:3000)
-  API_KEY         = SYNC_API_KEY del sito   (opzionale)
+  API_KEY         = SYNC_API_KEY del sito   (obbligatoria)
   RCON_HOST/PORT/PASSWORD                   (RCON del server PZ)
   PZ_SERVICE      unita' systemd            (default pzserver)
   PZ_CONFIG       percorso del .ini         (default

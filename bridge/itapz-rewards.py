@@ -13,7 +13,7 @@ Uso (cron, ogni minuto):
 
 Variabili:
   SITE_URL       URL del sito ITAPz            (default http://localhost:3000)
-  API_KEY        deve combaciare con SYNC_API_KEY del sito (opzionale)
+  API_KEY        deve combaciare con SYNC_API_KEY del sito (obbligatoria)
   RCON_HOST      host del server PZ            (default 127.0.0.1)
   RCON_PORT      porta RCON                    (default 27015)
   RCON_PASSWORD  password RCON                 (obbligatoria)
