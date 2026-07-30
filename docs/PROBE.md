@@ -14,6 +14,7 @@ riquadro "Console del server (live)", oppure sulla VPS:
 | `ITAPZ_PROBE_FIRST <nome> <ora>` | l'evento ha **davvero** sparato sul server dedicato |
 | `ITAPZ_PROBE_REPORT ...` | conteggi complessivi per ogni evento |
 | `ITAPZ_PROBE_MODDATA avvii=N stato=ok` | il ModData globale funziona |
+| `ITAPZ_PROBE_MODDATA stato=non-disponibile` | ModData non disponibile su questo server: i contatori vanno tenuti altrove |
 
 **"registrato" non basta.** Contano solo gli eventi che compaiono in una riga
 `ITAPZ_PROBE_FIRST`: sono gli unici su cui si possono costruire achievement.
@@ -27,6 +28,11 @@ riquadro "Console del server (live)", oppure sulla VPS:
 4. Salire di livello in un'abilità → `LevelPerk`.
 5. Entrare in un veicolo → `OnEnterVehicle`.
 6. Morire → `OnPlayerDeath`.
+7. Creare un personaggio nuovo (primo accesso, oppure dopo la morte) →
+   `OnCreatePlayer`.
+8. Colpire uno zombie senza ucciderlo → `OnPlayerAttackFinished`
+   (probabilmente già coperto dal punto sulle uccisioni, ma va reso
+   esplicito perché l'esito vada tracciato).
 
 ## Verifica del ModData
 
