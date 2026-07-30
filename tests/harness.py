@@ -27,8 +27,8 @@ function __mkEvent(name)
   end }
 end
 
-function __fire(name)
-  for _, fn in ipairs(__handlers[name] or {}) do fn() end
+function __fire(name, a, b, c)
+  for _, fn in ipairs(__handlers[name] or {}) do fn(a, b, c) end
 end
 """
 
@@ -54,8 +54,9 @@ class Probe:
             out[key] = {k: entry[k] for k in entry}
         return out
 
-    def fire(self, event_name):
-        self._lua.globals()["__fire"](event_name)
+    def fire(self, event_name, *args):
+        padded = list(args) + [None] * (3 - len(args))
+        self._lua.globals()["__fire"](event_name, *padded[:3])
 
     def has(self, needle):
         return any(needle in line for line in self.lines)
@@ -95,7 +96,7 @@ def load_probe(available_events, moddata=None, moddata_broken=False):
                 for k, v in values.items():
                     store[key][k] = v
 
-    with open(PROBE_PATH, encoding="utf-8") as f:
+    with open(PROBE_PATH, encoding="utf-8", newline="") as f:
         lua.execute(f.read())
 
     return Probe(lua)
@@ -105,4 +106,5 @@ ALL_EVENTS = [
     "OnPlayerDeath", "LevelPerk", "OnHitZombie", "OnZombieDead",
     "OnMakeItem", "OnDoTileBuilding", "OnEnterVehicle",
     "OnPlayerAttackFinished", "OnCreatePlayer",
+    "EveryTenMinutes",
 ]

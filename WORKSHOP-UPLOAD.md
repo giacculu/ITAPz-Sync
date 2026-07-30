@@ -21,7 +21,9 @@ Zomboid/Workshop/ITAPz_Sync/
             └── 42/                          ← contenuto specifico Build 42
                 ├── mod.info
                 ├── poster.png
-                └── media/lua/server/ITAPz_DataSync.lua
+                └── media/lua/server/
+                    ├── ITAPz_DataSync.lua
+                    └── ITAPz_Probe.lua
 ```
 
 > **Build 42**: la nuova gerarchia `42/` + `common/` (vuota) è **obbligatoria** —

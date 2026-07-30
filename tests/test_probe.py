@@ -42,13 +42,14 @@ def test_hook_mai_scattato_non_annunciato():
 
 def test_primo_avvio_conta_uno():
     probe = load_probe(ALL_EVENTS)
-    assert probe.has("ITAPZ_PROBE_MODDATA avvii=1 stato=ok")
+    assert probe.has("ITAPZ_PROBE_MODDATA fase=load avvii=1 precedente=nil stato=ok")
 
 
 def test_riavvio_incrementa_il_contatore():
     # simula un riavvio: il ModData contiene gia' un avvio precedente
     probe = load_probe(ALL_EVENTS, moddata={"ITAPz_Probe": {"boots": 1}})
-    assert probe.has("ITAPZ_PROBE_MODDATA avvii=2 stato=ok")
+    assert probe.has("ITAPZ_PROBE_MODDATA fase=load avvii=2")
+    assert probe.has("stato=ok")
 
 
 def test_contatore_scritto_nel_moddata():
@@ -58,9 +59,19 @@ def test_contatore_scritto_nel_moddata():
 
 def test_moddata_rotto_non_blocca_la_sonda():
     probe = load_probe(ALL_EVENTS, moddata_broken=True)
-    assert probe.has("ITAPZ_PROBE_MODDATA stato=non-disponibile")
+    assert probe.has("ITAPZ_PROBE_MODDATA fase=load stato=non-disponibile")
     # gli hook devono essere stati registrati lo stesso
     assert probe.has("ITAPZ_PROBE_HOOK OnPlayerDeath registrato")
+
+
+def test_moddata_fase_init_dopo_oninitglobalmoddata():
+    # OnInitGlobalModData e' l'evento che PZ usa per confermare che il
+    # salvataggio e' stato deserializzato: la lettura fatta al bootstrap
+    # (fase=load) e' sempre vuota, quella fatta qui e' quella affidabile.
+    probe = load_probe(ALL_EVENTS + ["OnInitGlobalModData"])
+    assert probe.has("ITAPZ_PROBE_MODDATA fase=load avvii=1")
+    probe.fire("OnInitGlobalModData")
+    assert probe.has("ITAPZ_PROBE_MODDATA fase=init avvii=2")
 
 
 def test_rapporto_dopo_la_soglia_di_scatti():
@@ -89,3 +100,25 @@ def test_rapporto_include_gli_hook_mai_scattati():
 def test_nessun_rapporto_senza_scatti():
     probe = load_probe(ALL_EVENTS)
     assert not probe.has("ITAPZ_PROBE_REPORT")
+
+
+def test_first_riporta_il_giocatore_se_disponibile():
+    # Un achievement deve sapere A CHI attribuire l'evento: se l'argomento
+    # e' un oggetto con getUsername(), la riga FIRST deve nominarlo.
+    probe = load_probe(ALL_EVENTS)
+    probe._lua.execute("""
+    __test_player = {}
+    function __test_player:getUsername() return "Mario" end
+    """)
+    player = probe._lua.globals()["__test_player"]
+    probe.fire("OnPlayerDeath", player)
+    assert probe.has("ITAPZ_PROBE_FIRST OnPlayerDeath")
+    assert probe.has("args=player:Mario")
+
+
+def test_first_riporta_nil_senza_argomenti():
+    # Se l'evento scatta senza argomenti (o il chiamante non ne fornisce),
+    # la riga deve dirlo esplicitamente invece di nasconderlo.
+    probe = load_probe(ALL_EVENTS)
+    probe.fire("OnPlayerDeath")
+    assert probe.has("args=nil,nil,nil")
