@@ -48,7 +48,17 @@ PLAYERS=$(printf '%s' "$BLOCK" | grep 'ITAPZ_PLAYER' | sed 's/^.*ITAPZ_PLAYER //
 # blocca l'heartbeat quando ci sono 0 giocatori (payload altrimenti identico).
 STAMP=$(printf '%s' "$BLOCK" | grep -m1 'ITAPZ_SYNC_BEGIN' | sed 's/^.*ITAPZ_SYNC_BEGIN //' | awk '{print $1}')
 
-printf '{"players":[%s],"timestamp":"%s"}' "$PLAYERS" "$STAMP" > "$TMP_PAYLOAD"
+# Stato del mondo (ora, stagione, meteo) e impostazioni sandbox
+extract_json() {
+  printf '%s' "$BLOCK" | grep -m1 "$1" | sed "s/^.*$1 //" | sed 's/[[:space:]]*$//' | sed 's/\.$//'
+}
+WORLD=$(extract_json 'ITAPZ_WORLD')
+SANDBOX=$(extract_json 'ITAPZ_SANDBOX')
+[ -n "$WORLD" ] || WORLD="null"
+[ -n "$SANDBOX" ] || SANDBOX="null"
+
+printf '{"players":[%s],"world":%s,"sandbox":%s,"timestamp":"%s"}' \
+  "$PLAYERS" "$WORLD" "$SANDBOX" "$STAMP" > "$TMP_PAYLOAD"
 
 # Salta se identico all'ultimo invio riuscito
 CURRENT_HASH=$(md5sum "$TMP_PAYLOAD" | cut -d' ' -f1)

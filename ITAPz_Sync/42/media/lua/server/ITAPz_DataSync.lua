@@ -112,6 +112,68 @@ local function getSkills(player)
     return out
 end
 
+--[[ Stato del mondo: ora in-game, stagione, meteo.
+     Letti direttamente dalle API del gioco (piu' affidabile del parsing di
+     map_t.bin fatto dal reporter). Ogni chiamata e' protetta. ]]
+local function collectWorld()
+    local w = {}
+
+    pcall(function()
+        local gt = getGameTime()
+        if not gt then return end
+        pcall(function() w.hour = math.floor(gt:getHour() or 0) end)
+        pcall(function() w.minutes = math.floor(gt:getMinutes() or 0) end)
+        pcall(function() w.day = math.floor((gt:getDay() or 0) + 1) end)
+        pcall(function() w.month = math.floor((gt:getMonth() or 0) + 1) end)
+        pcall(function() w.year = math.floor(gt:getYear() or 0) end)
+        pcall(function() w.nightsSurvived = math.floor(gt:getNightsSurvived() or 0) end)
+        pcall(function() w.worldAgeHours = math.floor(gt:getWorldAgeHours() or 0) end)
+    end)
+
+    pcall(function()
+        local cm = getClimateManager()
+        if not cm then return end
+        pcall(function() w.season = cm:getSeasonName() end)
+        pcall(function() w.temperature = math.floor((cm:getTemperature() or 0) * 10) / 10 end)
+        pcall(function() w.rain = math.floor((cm:getPrecipitationIntensity() or 0) * 100) / 100 end)
+        pcall(function() w.snow = math.floor((cm:getSnowStrength() or 0) * 100) / 100 end)
+        pcall(function() w.fog = math.floor((cm:getFogIntensity() or 0) * 100) / 100 end)
+        pcall(function() w.wind = math.floor((cm:getWindPower() or 0) * 100) / 100 end)
+        pcall(function() w.thunder = math.floor((cm:getThunderStorm() or 0) * 100) / 100 end)
+        pcall(function() w.isRaining = cm:isRaining() and true or false end)
+    end)
+
+    return w
+end
+
+--[[ Impostazioni sandbox rilevanti (sola lettura). ]]
+local SANDBOX_KEYS = {
+    "Zombies", "Distribution", "DayLength", "StartYear", "StartMonth", "StartDay",
+    "WaterShut", "ElecShut", "WaterShutModifier", "ElecShutModifier",
+    "XpMultiplier", "LootRespawn", "HoursForLootRespawn", "TimeSinceApo",
+    "ZombieLore.Speed", "ZombieLore.Strength", "ZombieLore.Toughness",
+    "ZombieLore.Cognition", "ZombieLore.Memory", "ZombieLore.Sight",
+    "ZombieLore.Hearing", "ZombieLore.ActiveOnly",
+}
+
+local function collectSandbox()
+    local out = {}
+    pcall(function()
+        local so = getSandboxOptions()
+        if not so then return end
+        for _, key in ipairs(SANDBOX_KEYS) do
+            pcall(function()
+                local opt = so:getOptionByName(key)
+                if opt then
+                    local v = opt:getValue()
+                    if v ~= nil then out[key] = tostring(v) end
+                end
+            end)
+        end
+    end)
+    return out
+end
+
 --[[ Raccoglie i dati di tutti i giocatori online.
      Ogni getter è protetto: un metodo assente in una versione B42 non
      interrompe la raccolta. ]]
@@ -181,6 +243,8 @@ local function emitData()
     local stamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
     print("ITAPZ_SYNC_BEGIN " .. stamp .. " players=" .. #players)
+    print("ITAPZ_WORLD " .. toJson(collectWorld()))
+    print("ITAPZ_SANDBOX " .. toJson(collectSandbox()))
     for _, p in ipairs(players) do
         print("ITAPZ_PLAYER " .. toJson(p))
     end
