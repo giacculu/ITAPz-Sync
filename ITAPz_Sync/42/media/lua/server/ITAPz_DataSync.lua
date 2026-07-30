@@ -22,9 +22,9 @@ Formato nel log:
 --   <cartella Zomboid>/Lua/ITAPz_Sync_config.txt
 -- con:
 --
---   INTERVAL=60
+--   INTERVAL=30
 --
-local DEFAULT_INTERVAL = 300 -- secondi tra due emissioni (300 = 5 min)
+local DEFAULT_INTERVAL = 60 -- secondi tra due emissioni
 
 local function loadInterval()
     local interval = DEFAULT_INTERVAL

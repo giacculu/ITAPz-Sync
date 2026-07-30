@@ -70,10 +70,10 @@ modificare il Lua. Per cambiare l'intervallo crea
 `<Zomboid>/Lua/ITAPz_Sync_config.txt`:
 
 ```ini
-INTERVAL=60
+INTERVAL=30
 ```
 
-Se il file manca, l'intervallo è 300s. Riavvia il server dopo modifiche.
+Se il file manca, l'intervallo è 60s. Riavvia il server dopo modifiche.
 
 ### Payload inviato dal bridge
 
