@@ -128,6 +128,41 @@ Fonti verificate sull'API **Build 42** (Lua del gioco / JavaDocs):
 Tutti i getter sono `pcall`-protetti: se un metodo non esiste in una versione
 di B42, il campo resta al default e il sync non si blocca.
 
+## Consegna ricompense in gioco (RCON)
+
+Gli oggetti riscattati sul sito (battlepass / ruota) finiscono in una coda. Lo
+script `bridge/itapz-rewards.py` la preleva e li consegna con `additem` via
+**RCON** — nessuna modifica alla mod, che non puo' ricevere nulla dalla rete.
+
+Abilita RCON nel `<server>.ini`:
+
+```ini
+RCONPort=27015
+RCONPassword=una_password_lunga
+```
+
+Installa e pianifica (ogni minuto):
+
+```bash
+curl -o /usr/local/bin/itapz-rewards.py   https://raw.githubusercontent.com/giacculu/ITAPz-Sync/master/bridge/itapz-rewards.py
+chmod +x /usr/local/bin/itapz-rewards.py
+```
+
+```cron
+* * * * * SITE_URL=http://localhost:3000 RCON_PASSWORD=xxx /usr/local/bin/itapz-rewards.py >> /var/log/itapz-rewards.log 2>&1
+```
+
+| Variabile | Default | Note |
+|---|---|---|
+| `SITE_URL` | `http://localhost:3000` | sito ITAPz |
+| `API_KEY` | (vuota) | deve combaciare con `SYNC_API_KEY` |
+| `RCON_HOST` | `127.0.0.1` | host del server PZ |
+| `RCON_PORT` | `27015` | porta RCON |
+| `RCON_PASSWORD` | — | obbligatoria |
+
+Solo libreria standard Python 3 (protocollo Source RCON implementato nello
+script). Non esporre la porta RCON su internet: il bridge gira in locale.
+
 ## Privacy
 
 Invia solo dati di gioco e lo username Steam pubblico. Nessuna password, nessun
@@ -143,6 +178,7 @@ ITAPz_Sync/
     ├── mod.info, poster.png
     └── media/lua/server/ITAPz_DataSync.lua
 bridge/itapz-bridge.sh            # estrae i dati dal log e li invia (cron + curl)
+bridge/itapz-rewards.py           # consegna gli oggetti riscattati via RCON (cron)
 workshop.txt                      # metadati Steam Workshop
 ```
 
