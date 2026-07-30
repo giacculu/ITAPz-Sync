@@ -203,6 +203,11 @@ local function collectPlayerData()
             local hours, zombies = 0, 0
             local weight, recipes, infected = 0, 0, false
             local skills = {}
+            -- Stato osservato: Build 42 non emette eventi per veicoli, fazioni
+            -- e safehouse, ma tutto questo si puo' leggere qui a ogni ciclo.
+            local faction, factionTag, factionOwner = "", "", false
+            local hasSafehouse, inVehicle = false, false
+            local px, py = 0, 0
 
             pcall(function() username = p:getUsername() end)
             pcall(function()
@@ -217,6 +222,20 @@ local function collectPlayerData()
             pcall(function() recipes = p:getKnownRecipes():size() or 0 end)
             pcall(function() infected = p:getBodyDamage():isInfected() or false end)
             pcall(function() skills = getSkills(p) end)
+
+            pcall(function() inVehicle = p:getVehicle() ~= nil end)
+            pcall(function() px = math.floor(p:getX() or 0) end)
+            pcall(function() py = math.floor(p:getY() or 0) end)
+            pcall(function() hasSafehouse = SafeHouse.hasSafehouse(p) ~= nil end)
+            pcall(function()
+                local f = Faction.getPlayerFaction(p)
+                if f then
+                    faction = tostring(f:getName() or "")
+                    factionTag = tostring(f:getTag() or "")
+                    -- getOwner restituisce lo username del fondatore
+                    factionOwner = tostring(f:getOwner() or "") == tostring(username or "")
+                end
+            end)
 
             -- getSurviveDays non esiste in B42: i giorni si derivano dalle ore
             local days = math.floor((tonumber(hours) or 0) / 24)
@@ -236,6 +255,13 @@ local function collectPlayerData()
                 weight = tonumber(weight) or 0,
                 recipesKnown = tonumber(recipes) or 0,
                 infected = infected and true or false,
+                faction = faction,
+                factionTag = factionTag,
+                factionOwner = factionOwner and true or false,
+                hasSafehouse = hasSafehouse and true or false,
+                inVehicle = inVehicle and true or false,
+                x = tonumber(px) or 0,
+                y = tonumber(py) or 0,
                 skills = skills,
             })
         end
@@ -263,6 +289,85 @@ local function emitData()
     end
     print("ITAPZ_SYNC_END")
 end
+
+--[[ ===================== EVENTI =====================
+
+     Le fotografie di stato non bastano per tutto: un'uccisione con l'ascia o
+     una morte non lasciano traccia nello stato al ciclo successivo. Questi
+     eventi vengono stampati NEL MOMENTO in cui accadono, con una sequenza
+     progressiva; il bridge tiene un segnalibro sul log e li raccoglie tutti,
+     anche se salta un giro.
+
+     Solo gli eventi che la sonda ha dimostrato funzionanti su server dedicato,
+     e solo quelli che dicono a CHI attribuirli: un evento senza giocatore non
+     puo' reggere un achievement. ]]
+
+-- Identifica questa esecuzione del server: insieme a `seq` rende ogni evento
+-- unico, cosi' il sito puo' scartare i duplicati se il bridge rimanda.
+local SESSION = tostring(os.time())
+local seq = 0
+
+local function usernameOf(v)
+    local name = nil
+    pcall(function()
+        if instanceof(v, "IsoPlayer") then name = tostring(v:getUsername() or "") end
+    end)
+    if name == "" then return nil end
+    return name
+end
+
+local function emitEvent(code, player, detail)
+    local name = usernameOf(player)
+    if not name then return end -- senza giocatore l'evento e' inutilizzabile
+
+    seq = seq + 1
+    print("ITAPZ_EVENT " .. toJson({
+        s = SESSION,
+        n = seq,
+        code = code,
+        player = name,
+        detail = tostring(detail or ""),
+    }))
+end
+
+local function hookEvent(name, fn)
+    pcall(function()
+        if Events and Events[name] and Events[name].Add then
+            Events[name].Add(function(a, b, c) pcall(fn, a, b, c) end)
+        end
+    end)
+end
+
+-- Uccisione con arma: l'unico evento che porta insieme attaccante, vittima e
+-- arma. Il dettaglio e' il tipo di arma, cosi' il sito puo' contare sia le
+-- uccisioni totali sia quelle con un'arma specifica.
+hookEvent("OnWeaponHitCharacter", function(attacker, target, weapon)
+    local morto = false
+    pcall(function() morto = target:isDead() end)
+    if not morto then return end
+
+    local arma = ""
+    pcall(function() arma = tostring(weapon:getFullType() or "") end)
+    emitEvent("kill_weapon", attacker, arma)
+end)
+
+-- Morte: OnPlayerDeath non scatta sui server dedicati, OnCharacterDeath si',
+-- ma vale anche per gli zombie: usernameOf() filtra da solo.
+hookEvent("OnCharacterDeath", function(character)
+    emitEvent("death", character, "")
+end)
+
+-- Livello di abilita' guadagnato
+hookEvent("LevelPerk", function(player, perk, level)
+    local nome = ""
+    pcall(function() nome = tostring(perk:getName() or "") end)
+    emitEvent("level_up", player, nome .. ":" .. tostring(level or ""))
+end)
+
+-- Personaggio nuovo (OnCreatePlayer non scatta sui server dedicati)
+hookEvent("OnCreateLivingCharacter", function(player)
+    emitEvent("new_character", player, "")
+end)
 
 --[[ Ciclo principale ]]
 local function syncData()
