@@ -25,6 +25,7 @@ local CANDIDATES = {
 
 local registered = {}
 local fired = {}
+local firstFire = {}
 
 local function stamp()
     local s = ""
@@ -34,6 +35,10 @@ end
 
 local function record(name)
     fired[name] = (fired[name] or 0) + 1
+    if not firstFire[name] then
+        firstFire[name] = stamp()
+        print("ITAPZ_PROBE_FIRST " .. name .. " " .. firstFire[name])
+    end
 end
 
 local function register(name)
