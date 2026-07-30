@@ -16,8 +16,12 @@ EnvironmentFile=/etc/itapz-agent.env
 ExecStart=/usr/local/bin/itapz-agent.py --loop
 Restart=always
 RestartSec=10
-# L'agent non ha bisogno di privilegi: usa sudo solo per systemctl (vedi sudoers)
-User=root
+# L'agent gira senza privilegi: possiede i file del server (per leggere e
+# scrivere il .ini) e via sudoers puo' fare solo start/stop/restart dell'unita'.
+# Deve combaciare con l'utente indicato in /etc/sudoers.d/itapz.
+User=administrator
+Group=administrator
+# necessario perche' sudo possa elevare per il solo systemctl consentito
 NoNewPrivileges=false
 
 [Install]

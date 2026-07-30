@@ -6,4 +6,5 @@ Cmnd_Alias ITAPZ_PZ = /usr/bin/systemctl start pzserver, \
                       /usr/bin/systemctl stop pzserver, \
                       /usr/bin/systemctl restart pzserver
 
-root ALL=(ALL) NOPASSWD: ITAPZ_PZ
+# L'utente deve essere lo stesso di User= in itapz-agent.service.
+administrator ALL=(ALL) NOPASSWD: ITAPZ_PZ
