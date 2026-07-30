@@ -22,6 +22,9 @@ Variabili:
   PZ_SERVICE      unita' systemd            (default pzserver)
   PZ_CONFIG       percorso del .ini         (default
                   /home/administrator/Zomboid/Server/servertest.ini)
+  PZ_LOG          console del server        (default
+                  /home/administrator/Zomboid/server-console.txt)
+  LOG_LINES       righe di log inviate      (default 300)
   POLL_SECONDS    intervallo in loop        (default 3)
 """
 
@@ -46,6 +49,8 @@ PZ_SERVICE = os.environ.get("PZ_SERVICE", "pzserver")
 PZ_CONFIG = os.environ.get(
     "PZ_CONFIG", "/home/administrator/Zomboid/Server/servertest.ini"
 )
+PZ_LOG = os.environ.get("PZ_LOG", "/home/administrator/Zomboid/server-console.txt")
+LOG_LINES = int(os.environ.get("LOG_LINES", "300"))
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
 
 # --- RCON (protocollo Source, solo libreria standard) -----------------------
@@ -181,6 +186,41 @@ def write_config(text):
     return f"Salvato. Backup: {backup}. Riavvia il server per applicare."
 
 
+_last_log_hash = None
+
+
+def tail_log():
+    """Ultime righe della console. Legge solo la coda del file: il log del
+    server cresce di continuo e puo' arrivare a centinaia di MB."""
+    size = os.path.getsize(PZ_LOG)
+    with open(PZ_LOG, "rb") as f:
+        f.seek(max(0, size - 128 * 1024))
+        chunk = f.read()
+    text = chunk.decode("utf-8", errors="replace")
+    return "\n".join(text.splitlines()[-LOG_LINES:])
+
+
+def push_log():
+    """Manda la coda del log al sito, ma solo se e' cambiata."""
+    global _last_log_hash
+    try:
+        text = tail_log()
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        print(f"ERRORE lettura log: {e}", file=sys.stderr)
+        return
+
+    h = hash(text)
+    if h == _last_log_hash:
+        return
+    try:
+        http_json(f"{SITE_URL}/api/server-log", method="POST", payload={"content": text})
+        _last_log_hash = h
+    except Exception as e:
+        print(f"ERRORE invio log: {e}", file=sys.stderr)
+
+
 def execute(cmd):
     t = cmd["type"]
     if t == "RCON":
@@ -199,6 +239,8 @@ def execute(cmd):
 
 
 def tick():
+    push_log()
+
     try:
         data = http_json(f"{SITE_URL}/api/server-control")
     except Exception as e:
