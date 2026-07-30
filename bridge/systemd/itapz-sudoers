@@ -1,0 +1,9 @@
+# /etc/sudoers.d/itapz  —  installare con:  sudo visudo -f /etc/sudoers.d/itapz
+#
+# L'agent puo' SOLO avviare/fermare/riavviare l'unita' del server di gioco.
+# Nessun altro privilegio: niente shell, niente comandi arbitrari.
+Cmnd_Alias ITAPZ_PZ = /usr/bin/systemctl start pzserver, \
+                      /usr/bin/systemctl stop pzserver, \
+                      /usr/bin/systemctl restart pzserver
+
+root ALL=(ALL) NOPASSWD: ITAPZ_PZ

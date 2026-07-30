@@ -1,0 +1,24 @@
+# Agent ITAPz: esegue sulla VPS i comandi accodati dal pannello admin
+# (RCON, start/stop/restart, lettura/scrittura del .ini).
+#
+#   sudo cp itapz-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now itapz-agent
+#
+# I segreti stanno in /etc/itapz-agent.env (chmod 600), non qui.
+
+[Unit]
+Description=ITAPz server control agent
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/itapz-agent.env
+ExecStart=/usr/local/bin/itapz-agent.py --loop
+Restart=always
+RestartSec=10
+# L'agent non ha bisogno di privilegi: usa sudo solo per systemctl (vedi sudoers)
+User=root
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
