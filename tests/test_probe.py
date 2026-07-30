@@ -61,3 +61,31 @@ def test_moddata_rotto_non_blocca_la_sonda():
     assert probe.has("ITAPZ_PROBE_MODDATA stato=non-disponibile")
     # gli hook devono essere stati registrati lo stesso
     assert probe.has("ITAPZ_PROBE_HOOK OnPlayerDeath registrato")
+
+
+def test_rapporto_dopo_la_soglia_di_scatti():
+    probe = load_probe(ALL_EVENTS)
+    for _ in range(25):
+        probe.fire("OnHitZombie")
+    assert probe.has("ITAPZ_PROBE_REPORT")
+    assert probe.has("OnHitZombie=25")
+
+
+def test_rapporto_non_a_ogni_scatto():
+    probe = load_probe(ALL_EVENTS)
+    for _ in range(75):
+        probe.fire("OnHitZombie")
+    # con soglia 25: rapporti al 25esimo, 50esimo e 75esimo
+    assert probe.count("ITAPZ_PROBE_REPORT") == 3
+
+
+def test_rapporto_include_gli_hook_mai_scattati():
+    probe = load_probe(ALL_EVENTS)
+    for _ in range(25):
+        probe.fire("OnHitZombie")
+    assert probe.has("LevelPerk=0")
+
+
+def test_nessun_rapporto_senza_scatti():
+    probe = load_probe(ALL_EVENTS)
+    assert not probe.has("ITAPZ_PROBE_REPORT")

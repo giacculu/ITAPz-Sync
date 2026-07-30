@@ -23,6 +23,11 @@ local CANDIDATES = {
     "OnCreatePlayer",
 }
 
+-- Un rapporto ogni N scatti complessivi. OnHitZombie scatta a ogni colpo:
+-- senza soglia il log, che e' anche il canale delle statistiche, sarebbe
+-- inutilizzabile.
+local REPORT_EVERY = 25
+
 local registered = {}
 local fired = {}
 local firstFire = {}
@@ -33,11 +38,28 @@ local function stamp()
     return s
 end
 
+local totalFires = 0
+
+local function report()
+    local parts = {}
+    for _, name in ipairs(CANDIDATES) do
+        if registered[name] then
+            table.insert(parts, name .. "=" .. (fired[name] or 0))
+        end
+    end
+    print("ITAPZ_PROBE_REPORT " .. table.concat(parts, " "))
+end
+
 local function record(name)
     fired[name] = (fired[name] or 0) + 1
     if not firstFire[name] then
         firstFire[name] = stamp()
         print("ITAPZ_PROBE_FIRST " .. name .. " " .. firstFire[name])
+    end
+
+    totalFires = totalFires + 1
+    if totalFires % REPORT_EVERY == 0 then
+        report()
     end
 end
 
