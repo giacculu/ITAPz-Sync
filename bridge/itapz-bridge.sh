@@ -96,11 +96,13 @@ extract_json() {
 }
 WORLD=$(extract_json 'ITAPZ_WORLD' || true)
 SANDBOX=$(extract_json 'ITAPZ_SANDBOX' || true)
+FACTIONS=$(extract_json 'ITAPZ_FACTIONS' || true)
 [ -n "$WORLD" ] || WORLD="null"
 [ -n "$SANDBOX" ] || SANDBOX="null"
+[ -n "$FACTIONS" ] || FACTIONS="null"
 
-printf '{"players":[%s],"events":[%s],"world":%s,"sandbox":%s,"timestamp":"%s"}' \
-  "$PLAYERS" "$EVENTS" "$WORLD" "$SANDBOX" "$STAMP" > "$TMP_PAYLOAD"
+printf '{"players":[%s],"events":[%s],"world":%s,"sandbox":%s,"factions":%s,"timestamp":"%s"}' \
+  "$PLAYERS" "$EVENTS" "$WORLD" "$SANDBOX" "$FACTIONS" "$STAMP" > "$TMP_PAYLOAD"
 
 # L'anti-duplicato vale solo quando NON ci sono eventi: due invii identici di
 # sola fotografia non servono, ma gli eventi vanno mandati comunque perche'

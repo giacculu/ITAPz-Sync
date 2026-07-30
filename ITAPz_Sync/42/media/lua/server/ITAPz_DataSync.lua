@@ -187,6 +187,49 @@ local function collectSandbox()
     return out
 end
 
+--[[ Elenco completo delle fazioni del server.
+
+     Serve perche' i dati per giocatore mostrano solo le fazioni di chi sta
+     giocando: una fazione i cui membri non entrano da giorni resterebbe
+     invisibile al sito.
+
+     getPlayers() NON comprende il fondatore — il codice del gioco fa
+     `getPlayers():size() + 1` — quindi va aggiunto a mano all'elenco. ]]
+local function collectFactions()
+    local out = {}
+    pcall(function()
+        local factions = Faction.getFactions()
+        if not factions then return end
+
+        for i = 0, factions:size() - 1 do
+            pcall(function()
+                local f = factions:get(i)
+                if not f then return end
+
+                local nome, tag, owner = "", "", ""
+                pcall(function() nome = tostring(f:getName() or "") end)
+                pcall(function() tag = tostring(f:getTag() or "") end)
+                pcall(function() owner = tostring(f:getOwner() or "") end)
+                if nome == "" then return end
+
+                local membri = {}
+                if owner ~= "" then table.insert(membri, owner) end
+                pcall(function()
+                    local ps = f:getPlayers()
+                    if not ps then return end
+                    for j = 0, ps:size() - 1 do
+                        local m = tostring(ps:get(j) or "")
+                        if m ~= "" and m ~= owner then table.insert(membri, m) end
+                    end
+                end)
+
+                table.insert(out, { name = nome, tag = tag, owner = owner, members = membri })
+            end)
+        end
+    end)
+    return out
+end
+
 --[[ Raccoglie i dati di tutti i giocatori online.
      Ogni getter è protetto: un metodo assente in una versione B42 non
      interrompe la raccolta. ]]
@@ -284,6 +327,7 @@ local function emitData()
     print("ITAPZ_SYNC_BEGIN " .. stamp .. " players=" .. #players)
     print("ITAPZ_WORLD " .. toJson(collectWorld()))
     print("ITAPZ_SANDBOX " .. toJson(collectSandbox()))
+    print("ITAPZ_FACTIONS " .. toJson(collectFactions()))
     for _, p in ipairs(players) do
         print("ITAPZ_PLAYER " .. toJson(p))
     end
