@@ -91,6 +91,24 @@ fi
 PLAYERS=$(printf '%s' "$BLOCK" | grep 'ITAPZ_PLAYER' | sed 's/^.*ITAPZ_PLAYER //' | sed 's/[[:space:]]*$//' | sed 's/\.$//' | paste -sd, - || true)
 STAMP=$(printf '%s' "$BLOCK" | grep -m1 'ITAPZ_SYNC_BEGIN' | sed 's/^.*ITAPZ_SYNC_BEGIN //' | awk '{print $1}' || true)
 
+# --- identita': username <-> Steam ID dai log di connessione ------------------
+# Il Lua di B42 non espone lo Steam ID dei giocatori, ma il server lo scrive
+# qui insieme all'username. E' l'unico modo per collegare personaggio e account
+# in modo esatto invece di confrontare i nomi.
+#
+# Le righe di handshake hanno steam-id="0" e username="null": si tengono solo
+# quelle con uno Steam ID vero (iniziano tutti per 7656) e un nome reale.
+#
+# Il file e' piccolo (qualche KB) e le coppie sono le stesse a ogni giro,
+# quindi si rilegge intero: il sito le riscrive sopra, l'operazione e' idempotente.
+CONN_FILE=$(ls -1t "$ZOMBOID_DIR"/Logs/*_connections.txt 2>/dev/null | head -n1 || true)
+IDENTITIES=""
+if [ -n "${CONN_FILE:-}" ] && [ -f "$CONN_FILE" ]; then
+  IDENTITIES=$(grep -ohE 'steam-id="7656[0-9]{13}" role="[^"]*" username="[^"]+"' "$CONN_FILE" 2>/dev/null \
+    | sed -E 's/steam-id="([0-9]+)" role="[^"]*" username="([^"]+)"/{"u":"\2","s":"\1"}/' \
+    | grep -v '"u":"null"' | sort -u | paste -sd, - || true)
+fi
+
 extract_json() {
   printf '%s' "$BLOCK" | grep -m1 "$1" | sed "s/^.*$1 //" | sed 's/[[:space:]]*$//' | sed 's/\.$//'
 }
@@ -101,8 +119,8 @@ FACTIONS=$(extract_json 'ITAPZ_FACTIONS' || true)
 [ -n "$SANDBOX" ] || SANDBOX="null"
 [ -n "$FACTIONS" ] || FACTIONS="null"
 
-printf '{"players":[%s],"events":[%s],"world":%s,"sandbox":%s,"factions":%s,"timestamp":"%s"}' \
-  "$PLAYERS" "$EVENTS" "$WORLD" "$SANDBOX" "$FACTIONS" "$STAMP" > "$TMP_PAYLOAD"
+printf '{"players":[%s],"events":[%s],"world":%s,"sandbox":%s,"factions":%s,"identities":[%s],"timestamp":"%s"}' \
+  "$PLAYERS" "$EVENTS" "$WORLD" "$SANDBOX" "$FACTIONS" "$IDENTITIES" "$STAMP" > "$TMP_PAYLOAD"
 
 # L'anti-duplicato vale solo quando NON ci sono eventi: due invii identici di
 # sola fotografia non servono, ma gli eventi vanno mandati comunque perche'
