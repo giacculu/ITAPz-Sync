@@ -26,7 +26,7 @@ TMP="/tmp/itapz_identita.json"
 IDENTITIES=$(find "$ZOMBOID_DIR/Logs" -name '*_connections.txt' -print0 2>/dev/null \
   | xargs -0 grep -ohE 'steam-id="7656[0-9]{13}" role="[^"]*" username="[^"]+"' 2>/dev/null \
   | sed -E 's/steam-id="([0-9]+)" role="[^"]*" username="([^"]+)"/{"u":"\2","s":"\1"}/' \
-  | grep -v '"u":"null"' | sort -u | paste -sd, - || true)
+  | grep -v '"u":"null"' | grep -iv '"u":"[^"]*admin' | sort -u | paste -sd, - || true)
 
 if [ -z "$IDENTITIES" ]; then
   echo "Nessuna identita' trovata in $ZOMBOID_DIR/Logs"

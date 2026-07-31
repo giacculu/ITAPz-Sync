@@ -106,7 +106,7 @@ IDENTITIES=""
 if [ -n "${CONN_FILE:-}" ] && [ -f "$CONN_FILE" ]; then
   IDENTITIES=$(grep -ohE 'steam-id="7656[0-9]{13}" role="[^"]*" username="[^"]+"' "$CONN_FILE" 2>/dev/null \
     | sed -E 's/steam-id="([0-9]+)" role="[^"]*" username="([^"]+)"/{"u":"\2","s":"\1"}/' \
-    | grep -v '"u":"null"' | sort -u | paste -sd, - || true)
+    | grep -v '"u":"null"' | grep -iv '"u":"[^"]*admin' | sort -u | paste -sd, - || true)
 fi
 
 extract_json() {
