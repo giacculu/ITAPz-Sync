@@ -99,6 +99,10 @@ STAMP=$(printf '%s' "$BLOCK" | grep -m1 'ITAPZ_SYNC_BEGIN' | sed 's/^.*ITAPZ_SYN
 # Le righe di handshake hanno steam-id="0" e username="null": si tengono solo
 # quelle con uno Steam ID vero (iniziano tutti per 7656) e un nome reale.
 #
+# Gli account di servizio NON si filtrano qui: il nome da escludere si imposta
+# dal pannello, e uno scritto nel codice escluderebbe anche nomi legittimi che
+# lo contengono per caso. Il controllo lo fa il sito, che quel valore ce l'ha.
+#
 # Il file e' piccolo (qualche KB) e le coppie sono le stesse a ogni giro,
 # quindi si rilegge intero: il sito le riscrive sopra, l'operazione e' idempotente.
 CONN_FILE=$(ls -1t "$ZOMBOID_DIR"/Logs/*_connections.txt 2>/dev/null | head -n1 || true)
@@ -106,7 +110,7 @@ IDENTITIES=""
 if [ -n "${CONN_FILE:-}" ] && [ -f "$CONN_FILE" ]; then
   IDENTITIES=$(grep -ohE 'steam-id="7656[0-9]{13}" role="[^"]*" username="[^"]+"' "$CONN_FILE" 2>/dev/null \
     | sed -E 's/steam-id="([0-9]+)" role="[^"]*" username="([^"]+)"/{"u":"\2","s":"\1"}/' \
-    | grep -v '"u":"null"' | grep -iv '"u":"[^"]*admin' | sort -u | paste -sd, - || true)
+    | grep -v '"u":"null"' | sort -u | paste -sd, - || true)
 fi
 
 extract_json() {
