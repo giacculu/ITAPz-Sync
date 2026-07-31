@@ -62,6 +62,9 @@ import struct
 
 SERVERDATA_AUTH = 3
 SERVERDATA_EXECCOMMAND = 2
+# Tipi in RISPOSTA (numerati a parte da quelli in richiesta)
+SERVERDATA_RESPONSE_VALUE = 0
+SERVERDATA_AUTH_RESPONSE = 2
 
 
 class Rcon:
@@ -93,38 +96,63 @@ class Rcon:
         return res_id, res_type, data[8:-2].decode("utf-8", errors="replace")
 
     def _auth(self, password):
-        req_id = self._send(SERVERDATA_AUTH, password)
-        res_id, _, _ = self._recv()
-        if res_id == -1:
-            raise RuntimeError("password RCON errata")
-        if res_id != req_id:
-            res_id, _, _ = self._recv()
+        """Autentica consumando TUTTI i pacchetti dell'auth.
+
+        Il protocollo Source risponde all'autenticazione con due pacchetti: un
+        RESPONSE_VALUE vuoto e poi l'AUTH_RESPONSE vero. Leggerne uno solo
+        lasciava l'altro nel buffer, e il comando successivo se lo ritrovava
+        come propria prima risposta — vuota. E' per questo che `players`
+        tornava vuoto pur essendoci gente collegata.
+
+        Si riconosce dal TIPO, non dall'id: entrambi i pacchetti portano l'id
+        della richiesta, quindi l'id non li distingue.
+        """
+        self._send(SERVERDATA_AUTH, password)
+
+        for _ in range(4):  # limite di sicurezza: non restare in ascolto per sempre
+            res_id, res_type, _ = self._recv()
             if res_id == -1:
                 raise RuntimeError("password RCON errata")
+            if res_type == SERVERDATA_AUTH_RESPONSE:
+                return
+        raise RuntimeError("autenticazione RCON senza risposta riconoscibile")
 
     def command(self, cmd):
         """Esegue un comando e restituisce l'output completo.
 
-        PZ spezza le risposte lunghe su piu' pacchetti (e la prima puo' essere
-        vuota): leggerne uno solo restituiva stringhe vuote, per cui `players`
-        risultava sempre a zero. Si continua a leggere finche' il socket tace.
+        Due accortezze, entrambe imparate sul campo:
+
+        - si tengono solo i pacchetti con l'id di QUESTA richiesta. Se qualcosa
+          e' rimasto nel buffer da prima, viene scartato invece di essere preso
+          per la risposta;
+        - PZ puo' spezzare le risposte lunghe su piu' pacchetti, quindi si
+          continua a leggere finche' il socket tace, senza fermarsi al primo
+          pacchetto vuoto.
         """
-        self._send(SERVERDATA_EXECCOMMAND, cmd)
+        req_id = self._send(SERVERDATA_EXECCOMMAND, cmd)
 
         chunks = []
+        scartati = 0
         try:
-            _, _, body = self._recv()
-            chunks.append(body)
+            # Primo pacchetto col nostro id: col timeout pieno, perche' il
+            # server potrebbe metterci un attimo.
+            while True:
+                res_id, _, body = self._recv()
+                if res_id == req_id:
+                    chunks.append(body)
+                    break
+                scartati += 1
+                if scartati > 4:
+                    return ""
         except (socket.timeout, TimeoutError):
             return ""
 
         self.sock.settimeout(0.6)
         try:
             while True:
-                _, _, more = self._recv()
-                if not more:
-                    break
-                chunks.append(more)
+                res_id, _, more = self._recv()
+                if res_id == req_id:
+                    chunks.append(more)
         except (socket.timeout, TimeoutError, OSError, struct.error):
             pass
         finally:
