@@ -8,10 +8,15 @@
 # sito, e con lei l'achievement e l'annuncio su Discord. Come servizio il giro
 # e' ogni due secondi.
 #
-# Se la riga di cron esiste ancora va tolta, o i due si contendono il
-# segnalibro di lettura e ognuno si mangia i dati dell'altro:
-#   sudo rm -f /etc/cron.d/itapz-bridge
-#   sudo crontab -l | grep -v itapz-bridge | sudo crontab -
+# La riga di cron va tolta, o i due si contendono il segnalibro di lettura e
+# ognuno si mangia i dati dell'altro. Attenzione: il file /etc/cron.d/itapz
+# contiene anche altre righe (premi, allarmi, backup), quindi si toglie la
+# riga, non il file:
+#   sudo sed -i '/itapz-bridge/d' /etc/cron.d/itapz
+#   sudo crontab -l 2>/dev/null | grep -v itapz-bridge | sudo crontab -
+#   sudo sed -i '/itapz-bridge/d' /etc/crontab
+# Poi si verifica che non sia rimasta da nessuna parte:
+#   sudo grep -rn itapz-bridge /etc/cron* /var/spool/cron 2>/dev/null
 #
 # I segreti stanno in /etc/itapz-bridge.env (chmod 600), non qui:
 #   ZOMBOID_DIR=/home/administrator/Zomboid
