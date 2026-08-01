@@ -1,0 +1,10 @@
+Cartella vuota di proposito.
+
+All'avvio Project Zomboid percorre media/AnimSets e media/actiongroups di
+ogni mod, sotto common/ e sotto la cartella della build. Se il percorso non
+esiste, walkFileTree solleva NoSuchFileException e il server scrive quattro
+stack trace nel log a ogni riavvio.
+
+Questa mod non ha animazioni: le cartelle ci sono solo perche' la ricerca
+trovi qualcosa da percorrere e finisca senza errori. Il file serve a
+spedirle: ne' git ne' il caricamento sul Workshop portano cartelle vuote.
