@@ -85,6 +85,7 @@ __stato = {
   drunk = 0, salute = 100, veleno = 0, ciboAvariato = 0,
   sanguinanti = 0, fuoco = false, xpCarpenteria = 0,
   velocita = 0, inVeicolo = false, haFlauto = false, infetto = false,
+  x = 100, y = 200,
 }
 
 local function faiGiocatore(nome)
@@ -118,8 +119,8 @@ local function faiGiocatore(nome)
       }
     end,
     isOnFire = function() return __stato.fuoco end,
-    getX = function() return 100 end,
-    getY = function() return 200 end,
+    getX = function() return __stato.x end,
+    getY = function() return __stato.y end,
   }
 end
 
@@ -265,3 +266,71 @@ def test_sul_client_la_mod_non_fa_niente():
         "sul client la mod ha emesso dati: " + str(stampate)
     )
     assert any("niente da fare sul client" in r for r in stampate)
+
+
+def traccia(lua):
+    """Il percorso mandato al sito con l'ultimo giro di dati."""
+    righe = lua.globals()["__lines"]
+    for i in range(1, len(righe) + 1):
+        if righe[i].startswith("ITAPZ_PLAYER "):
+            punti = json.loads(righe[i][len("ITAPZ_PLAYER "):]).get("traccia", [])
+            # Lua manda tabelle: lupa le rende come dizionari con indici da 1
+            return [[p["1"] if isinstance(p, dict) else p[0],
+                     p["2"] if isinstance(p, dict) else p[1]] for p in punti]
+    return None
+
+
+def test_la_traccia_raccoglie_le_posizioni_fra_due_invii(mod):
+    """Il caso che rompeva: entrare in una citta' e uscirne fra due sync.
+
+    Il sito vede la posizione solo quando arrivano i dati. Senza il percorso,
+    chi passa e se ne va non ci e' mai stato.
+    """
+    lua = mod
+    sincronizza_completo(lua)  # si parte da una traccia vuota
+
+    # Scatti del timer SENZA far avanzare l'orologio: troppo ravvicinati per
+    # far partire un invio, che e' esattamente la situazione del problema.
+    for x, y in [(8107, 11576), (9000, 11576), (12000, 9000)]:
+        stato(lua, x=x, y=y)
+        lua.execute('__fire("EveryOneMinute")')
+
+    stato(lua, x=13000, y=8000)
+    punti = sincronizza_completo(lua)
+    assert punti is not None, "nessuna riga giocatore"
+    assert [8107, 11576] in punti, f"il passaggio nella citta' e' andato perso: {punti}"
+    assert len(punti) >= 3
+
+
+def test_la_traccia_si_svuota_dopo_l_invio(mod):
+    """I punti gia' spediti non vanno rimandati a ogni giro."""
+    lua = mod
+    sincronizza_completo(lua)
+    stato(lua, x=500, y=500)
+    lua.execute('__fire("EveryOneMinute")')
+    assert sincronizza_completo(lua)
+
+    secondo = sincronizza_completo(lua)
+    assert secondo == [] or secondo is None or len(secondo) <= 1, (
+        f"la traccia non e' stata svuotata: {secondo}"
+    )
+
+
+def test_fermo_sul_posto_non_riempie_la_traccia(mod):
+    """Chi sta in base non deve produrre cento volte lo stesso punto."""
+    lua = mod
+    sincronizza_completo(lua)
+    stato(lua, x=777, y=888)
+    for _ in range(10):
+        lua.execute('__fire("EveryOneMinute")')
+    punti = sincronizza_completo(lua)
+    assert punti is not None
+    assert len(punti) <= 2, f"punti ripetuti: {punti}"
+
+
+def sincronizza_completo(lua):
+    """Fa scattare un invio e restituisce la traccia spedita."""
+    lua.execute("__lines = {}")
+    lua.execute("__now = __now + 3600")
+    lua.execute('__fire("EveryTenMinutes")')
+    return traccia(lua)

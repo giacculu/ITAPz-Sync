@@ -372,6 +372,70 @@ local function aggiornaFlags(player, username, infetto, inVeicolo)
 end
 
 
+--[[ Traccia degli spostamenti.
+
+     Gli achievement di esplorazione chiedono di aver raggiunto un posto. Il
+     sito pero' vede la posizione solo quando arrivano i dati, cioe' ogni 30
+     secondi: chi entra in una citta' e ne esce prima del giro successivo non
+     ci e' mai stato, per quanto ne sa il sito.
+
+     Qui la posizione si annota a ogni scatto del timer — che batte sul minuto
+     di gioco, molto piu' fitto — e il percorso viene spedito insieme ai dati.
+     A guardare se quel percorso attraversa una zona ci pensa il sito, che e'
+     l'unico a sapere dove sono le zone: metterne una copia nella mod
+     significherebbe doverle tenere allineate in due posti.
+
+     La traccia sta in memoria e non in ModData: perderla a un riavvio non e'
+     grave, sono al massimo trenta secondi di cammino. ]]
+local MAX_PUNTI = 120 -- tetto per giocatore: oltre, un percorso lungo gonfierebbe la riga
+
+local tracce = {}
+
+local function annotaPosizione(username, x, y)
+    if not username then return end
+    local punti = tracce[username]
+    if not punti then
+        punti = {}
+        tracce[username] = punti
+    end
+
+    -- Fermo sul posto: non si annota due volte lo stesso punto, o la traccia
+    -- si riempirebbe di ripetizioni di chi sta in base.
+    local ultimo = punti[#punti]
+    if ultimo and ultimo[1] == x and ultimo[2] == y then return end
+
+    if #punti >= MAX_PUNTI then table.remove(punti, 1) end
+    table.insert(punti, { x, y })
+end
+
+--[[ Segna dove sono adesso tutti i giocatori online.
+
+     Gira a ogni scatto del timer, anche quando non e' ancora ora di spedire i
+     dati: e' proprio fra un invio e l'altro che serve. ]]
+local function annotaTutti()
+    local players = getOnlinePlayers()
+    if not players then return end
+    for i = 0, players:size() - 1 do
+        local p = players:get(i)
+        if p then
+            pcall(function()
+                annotaPosizione(p:getUsername(), math.floor(p:getX() or 0), math.floor(p:getY() or 0))
+            end)
+        end
+    end
+end
+
+--[[ Il percorso di un giocatore, e lo svuota.
+
+     Si svuota subito: i punti sono gia' partiti verso il sito, tenerli
+     significherebbe rimandarli a ogni giro. ]]
+local function prendiTraccia(username)
+    local punti = tracce[username] or {}
+    tracce[username] = nil
+    return punti
+end
+
+
 local function collectPlayerData()
     local players = getOnlinePlayers()
     if not players then return {} end
@@ -452,6 +516,7 @@ local function collectPlayerData()
                 y = tonumber(py) or 0,
                 skills = skills,
                 flags = flags,
+                traccia = username and prendiTraccia(username) or {},
             })
         end
     end
@@ -595,6 +660,10 @@ local function onPeriodic()
         announced = true
         print("ITAPz: timer attivo (primo trigger ricevuto)")
     end
+
+    -- Prima si annota dove sono tutti, poi si guarda se e' ora di spedire:
+    -- e' fra un invio e l'altro che la traccia serve.
+    pcall(annotaTutti)
     local now = realTime()
     if now then
         if now - lastSyncTime >= INTERVAL then
