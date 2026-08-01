@@ -12,6 +12,9 @@ Comandi supportati:
   READ_CONFIG   legge il file .ini del server
   WRITE_CONFIG  scrive il .ini (con backup e validazione)
   WIPE          ferma il server, svuota il salvataggio, riavvia
+  DELETE_CHARACTER  cancella un personaggio dal salvataggio (e, se richiesto,
+                    il suo account di gioco)
+  INSPECT_SAVE  elenca tabelle e file del salvataggio, senza toccare niente
 
 Uso (servizio systemd, vedi bridge/systemd/):
   SITE_URL=http://localhost:3000 RCON_PASSWORD=xxx ./itapz-agent.py --loop
@@ -38,6 +41,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -302,6 +306,148 @@ def run_wipe(payload):
     return "\n".join(fatte)
 
 
+def _percorso_salvataggio():
+    """Cartella del mondo: Saves/Multiplayer/<nome server>."""
+    return os.path.join(ZOMBOID_DIR, "Saves", "Multiplayer", nome_server())
+
+
+def _db_personaggi():
+    """Il database dei personaggi.
+
+    Sta nella cartella del mondo e non in db/: quello contiene gli account
+    (login e password), che sono un'altra cosa e si toccano solo su richiesta.
+    """
+    return os.path.join(_percorso_salvataggio(), "players.db")
+
+
+def _tabelle_con_username(conn):
+    """Tabelle che hanno una colonna con lo username, con il nome esatto.
+
+    Si guarda com'e' fatto il database invece di dare per scontata una
+    tabella: Project Zomboid ne ha cambiato la forma fra una build e l'altra
+    (`localPlayers` in singolo, `networkPlayers` in rete), e una query scritta
+    a memoria fallirebbe in silenzio proprio dove serve precisione.
+    """
+    trovate = []
+    nomi = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()
+    for (tabella,) in nomi:
+        for colonna in conn.execute(f'PRAGMA table_info("{tabella}")').fetchall():
+            # Solo "username": e' inequivocabile. Una colonna chiamata "name"
+            # puo' essere il nome di qualsiasi cosa — un veicolo, una stanza —
+            # e cancellare per nome in una tabella sbagliata farebbe un danno
+            # peggiore di quello che si voleva evitare.
+            if str(colonna[1]).lower() == "username":
+                trovate.append((tabella, colonna[1]))
+                break
+    return trovate
+
+
+def inspect_save(_payload=None):
+    """Fotografia del salvataggio, senza modificare niente.
+
+    Serve a sapere davvero dove stanno le cose prima di cancellarle: le
+    fazioni, per esempio, non sono documentate da nessuna parte.
+    """
+    righe = [f"cartella: {_percorso_salvataggio()}"]
+
+    try:
+        for nome in sorted(os.listdir(_percorso_salvataggio())):
+            intero = os.path.join(_percorso_salvataggio(), nome)
+            tipo = "dir " if os.path.isdir(intero) else "file"
+            dim = "" if os.path.isdir(intero) else f" {os.path.getsize(intero)} byte"
+            righe.append(f"  {tipo} {nome}{dim}")
+    except FileNotFoundError:
+        righe.append("  (cartella inesistente)")
+
+    db = _db_personaggi()
+    righe.append(f"players.db: {'presente' if os.path.exists(db) else 'assente'}")
+    if os.path.exists(db):
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            for (tabella,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall():
+                colonne = [c[1] for c in conn.execute(f'PRAGMA table_info("{tabella}")')]
+                quante = conn.execute(f'SELECT COUNT(*) FROM "{tabella}"').fetchone()[0]
+                righe.append(f"  {tabella} ({quante} righe): {', '.join(colonne)}")
+        finally:
+            conn.close()
+
+    return "\n".join(righe)
+
+
+def delete_character(payload):
+    """Cancella un personaggio dal salvataggio.
+
+    Il server va fermato prima: tiene i personaggi in memoria e al primo
+    salvataggio riscriverebbe la riga appena tolta, facendo sembrare che il
+    comando non abbia funzionato.
+
+    L'account di gioco (login e password) e' un'altra cosa e si tocca solo se
+    richiesto: cancellare il personaggio di qualcuno non significa impedirgli
+    di rientrare.
+    """
+    try:
+        opz = json.loads(payload or "{}")
+    except Exception:
+        opz = {}
+
+    username = str(opz.get("username") or "").strip()
+    if not username:
+        raise RuntimeError("nessun personaggio indicato")
+    anche_account = opz.get("account", False)
+
+    db = _db_personaggi()
+    if not os.path.exists(db):
+        raise RuntimeError(f"database dei personaggi non trovato: {db}")
+
+    fatte = []
+
+    # L'account si toglie via RCON, che funziona a server acceso: e' l'unica
+    # via documentata, e non richiede di fermare niente.
+    if anche_account:
+        try:
+            fatte.append("account: " + run_rcon(f'removeuserfromwhitelist "{username}"'))
+        except Exception as e:
+            fatte.append(f"account: NON rimosso ({e})")
+
+    fatte.append(run_systemctl("stop"))
+    time.sleep(3)
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    os.makedirs(WIPE_BACKUP_DIR, exist_ok=True)
+    copia = os.path.join(WIPE_BACKUP_DIR, f"players.db.{stamp}")
+    shutil.copy2(db, copia)
+    fatte.append(f"copia di sicurezza: {copia}")
+
+    conn = sqlite3.connect(db)
+    try:
+        tabelle = _tabelle_con_username(conn)
+        if not tabelle:
+            raise RuntimeError(
+            "nessuna tabella con una colonna 'username' in players.db: "
+            "lancia INSPECT_SAVE per vedere com'e' fatto"
+        )
+        totale = 0
+        for tabella, colonna in tabelle:
+            cur = conn.execute(
+                f'DELETE FROM "{tabella}" WHERE "{colonna}" = ?', (username,)
+            )
+            if cur.rowcount > 0:
+                fatte.append(f"{tabella}: {cur.rowcount} righe rimosse")
+                totale += cur.rowcount
+        conn.commit()
+        if totale == 0:
+            fatte.append(f"nessuna riga per \"{username}\": forse il nome non combacia")
+    finally:
+        conn.close()
+
+    fatte.append(run_systemctl("start"))
+    return "\n".join(fatte)
+
+
 def read_config():
     with open(PZ_CONFIG, "r", encoding="utf-8", errors="replace") as f:
         return f.read()
@@ -428,6 +574,10 @@ def execute(cmd):
         return write_config(cmd["payload"])
     if t == "WIPE":
         return run_wipe(cmd.get("payload"))
+    if t == "DELETE_CHARACTER":
+        return delete_character(cmd.get("payload"))
+    if t == "INSPECT_SAVE":
+        return inspect_save(cmd.get("payload"))
     raise RuntimeError(f"tipo comando sconosciuto: {t}")
 
 
