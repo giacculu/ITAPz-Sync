@@ -1,0 +1,37 @@
+# Bridge ITAPz: legge il log del server e manda i dati al sito.
+#
+#   sudo cp itapz-bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now itapz-bridge
+#
+# Sostituisce la riga di cron. Da cron il minimo e' un minuto: un'uccisione
+# poteva restare ferma nel log fino a sessanta secondi prima di arrivare al
+# sito, e con lei l'achievement e l'annuncio su Discord. Come servizio il giro
+# e' ogni due secondi.
+#
+# Se la riga di cron esiste ancora va tolta, o i due si contendono il
+# segnalibro di lettura e ognuno si mangia i dati dell'altro:
+#   sudo rm -f /etc/cron.d/itapz-bridge
+#   sudo crontab -l | grep -v itapz-bridge | sudo crontab -
+#
+# I segreti stanno in /etc/itapz-bridge.env (chmod 600), non qui:
+#   ZOMBOID_DIR=/home/administrator/Zomboid
+#   SITE_URL=http://localhost:3000
+#   API_KEY=la_tua_SYNC_API_KEY
+
+[Unit]
+Description=ITAPz log bridge
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/itapz-bridge.env
+ExecStart=/usr/local/bin/itapz-bridge.sh --loop
+Restart=always
+RestartSec=10
+# Legge il log del server e scrive i propri segnalibri nella cartella Zomboid:
+# stesso utente che possiede quei file.
+User=administrator
+Group=administrator
+
+[Install]
+WantedBy=multi-user.target

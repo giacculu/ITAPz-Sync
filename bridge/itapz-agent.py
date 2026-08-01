@@ -16,6 +16,10 @@ Comandi supportati:
                     il suo account di gioco)
   INSPECT_SAVE  elenca tabelle e file del salvataggio, senza toccare niente
 
+L'agent tiene anche aggiornato l'elenco delle zone che la mod usa per dire
+"sei arrivato a Rosewood": lo scarica dal sito e lo scrive dove la mod lo
+legge.
+
 Uso (servizio systemd, vedi bridge/systemd/):
   SITE_URL=http://localhost:3000 RCON_PASSWORD=xxx ./itapz-agent.py --loop
 
@@ -35,6 +39,7 @@ Variabili:
   LOG_LINES       righe di log inviate      (default 300)
   POLL_SECONDS    intervallo in loop        (default 3)
   HEARTBEAT_SECONDS  intervallo del battito (default 15)
+  ZONE_SECONDS    ogni quanto riscaricare le zone (default 600)
 """
 
 import json
@@ -71,6 +76,7 @@ WIPE_BACKUP_DIR = os.environ.get("WIPE_BACKUP_DIR", os.path.join(ZOMBOID_DIR, "w
 LOG_LINES = int(os.environ.get("LOG_LINES", "300"))
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
 HEARTBEAT_SECONDS = int(os.environ.get("HEARTBEAT_SECONDS", "15"))
+ZONE_SECONDS = int(os.environ.get("ZONE_SECONDS", "600"))
 
 # --- RCON (protocollo Source, solo libreria standard) -----------------------
 import socket
@@ -581,9 +587,57 @@ def execute(cmd):
     raise RuntimeError(f"tipo comando sconosciuto: {t}")
 
 
+_ultime_zone = 0.0
+
+
+def push_zone():
+    """Scarica le zone dal sito e le scrive dove la mod le legge.
+
+    Il file sta in Zomboid/Lua/ perche' e' l'unica cartella da cui il Lua del
+    server sa leggere. La mod lo rilegge quando riparte: cambiare una zona sul
+    sito ha effetto al riavvio successivo, che per un elenco che cambia due
+    volte l'anno e' abbastanza.
+
+    Si riscrive solo se il contenuto e' cambiato: toccare il file a ogni giro
+    non servirebbe a niente e sporcherebbe la data di modifica.
+    """
+    global _ultime_zone
+    ora = time.monotonic()
+    if ora - _ultime_zone < ZONE_SECONDS:
+        return
+    _ultime_zone = ora
+
+    try:
+        req = urllib.request.Request(f"{SITE_URL}/api/zone")
+        if API_KEY:
+            req.add_header("X-API-Key", API_KEY)
+        with urllib.request.urlopen(req, timeout=10) as risposta:
+            testo = risposta.read().decode("utf-8")
+    except Exception as e:
+        print(f"ERRORE scaricamento zone: {e}", file=sys.stderr)
+        return
+
+    if not testo.strip():
+        return
+
+    percorso = os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Zone.txt")
+    try:
+        if os.path.exists(percorso):
+            with open(percorso, "r", encoding="utf-8") as f:
+                if f.read() == testo:
+                    return
+        os.makedirs(os.path.dirname(percorso), exist_ok=True)
+        with open(percorso, "w", encoding="utf-8", newline="\n") as f:
+            f.write(testo)
+        print(f"zone aggiornate: {len(testo.strip().splitlines())} righe in {percorso}")
+    except Exception as e:
+        print(f"ERRORE scrittura zone: {e}", file=sys.stderr)
+
+
 def tick():
     push_heartbeat()
     push_log()
+    push_zone()
 
     try:
         data = http_json(f"{SITE_URL}/api/server-control")

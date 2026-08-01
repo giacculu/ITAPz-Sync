@@ -68,6 +68,18 @@ PerkFactory = { PerkList = {
   get = function(_, i) return carpenteria end,
 } }
 
+-- Lettore di file finto: serve alle zone (e alla configurazione).
+__files = {}
+getFileReader = function(nome)
+  local righe = __files[nome]
+  if not righe then return nil end
+  local i = 0
+  return {
+    readLine = function() i = i + 1; return righe[i] end,
+    close = function() end,
+  }
+end
+
 SafeHouse = { hasSafehouse = function() return nil end }
 Faction = { getPlayerFaction = function() return nil end }
 getGameTime = function() return nil end
@@ -334,3 +346,74 @@ def sincronizza_completo(lua):
     lua.execute("__now = __now + 3600")
     lua.execute('__fire("EveryTenMinutes")')
     return traccia(lua)
+
+
+def eventi(lua):
+    """Gli eventi emessi dall'ultimo azzeramento del log."""
+    righe = lua.globals()["__lines"]
+    fuori = []
+    for i in range(1, len(righe) + 1):
+        if righe[i].startswith("ITAPZ_EVENT "):
+            fuori.append(json.loads(righe[i][len("ITAPZ_EVENT "):]))
+    return fuori
+
+
+def mod_con_zone():
+    """Carica la mod con un elenco di zone gia' scritto nel file."""
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    lua.execute(PRELUDE)
+    lua.execute("""
+        __files["ITAPz_Zone.txt"] = {
+          "rosewood 7657 11126 8557 12026",
+          "laboratorio_droga 11467 9144 11767 9444",
+        }
+    """)
+    with open(SYNC_PATH, encoding="utf-8") as f:
+        lua.execute(f.read())
+    return lua
+
+
+def test_entrare_in_una_zona_emette_un_evento():
+    """Il punto di tutto: l'evento parte quando entri, non quando parte il sync."""
+    lua = mod_con_zone()
+    lua.execute("__lines = {}")
+    stato(lua, x=8107, y=11576)  # centro di Rosewood
+    lua.execute('__fire("EveryOneMinute")')
+
+    zone = [e["detail"] for e in eventi(lua) if e["code"] == "zona"]
+    assert zone == ["rosewood"], f"eventi zona: {zone}"
+
+
+def test_la_zona_si_annuncia_una_volta_sola():
+    lua = mod_con_zone()
+    stato(lua, x=8107, y=11576)
+    lua.execute('__fire("EveryOneMinute")')
+
+    lua.execute("__lines = {}")
+    for _ in range(5):
+        lua.execute('__fire("EveryOneMinute")')
+    zone = [e["detail"] for e in eventi(lua) if e["code"] == "zona"]
+    assert zone == [], f"la zona e' stata riannunciata: {zone}"
+
+
+def test_fuori_da_ogni_zona_non_emette_niente():
+    lua = mod_con_zone()
+    lua.execute("__lines = {}")
+    stato(lua, x=1, y=1)
+    lua.execute('__fire("EveryOneMinute")')
+    assert [e for e in eventi(lua) if e["code"] == "zona"] == []
+
+
+def test_senza_file_zone_la_mod_funziona_lo_stesso():
+    """Se l'agent non ha ancora scritto il file, non deve rompersi niente."""
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    lua.execute(PRELUDE)
+    with open(SYNC_PATH, encoding="utf-8") as f:
+        lua.execute(f.read())
+
+    lua.execute("__lines = {}")
+    stato(lua, x=8107, y=11576)
+    lua.execute('__fire("EveryOneMinute")')
+    assert [e for e in eventi(lua) if e["code"] == "zona"] == []
+    # e il resto continua a girare
+    assert sincronizza_completo(lua) is not None

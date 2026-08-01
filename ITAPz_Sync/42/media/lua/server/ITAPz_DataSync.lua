@@ -408,6 +408,66 @@ local function annotaPosizione(username, x, y)
     table.insert(punti, { x, y })
 end
 
+--[[ Zone della mappa.
+
+     L'elenco lo tiene il sito, che e' l'unico posto dove ha senso: l'agent lo
+     scarica e lo scrive in Zomboid/Lua/ITAPz_Zone.txt, l'unica cartella da cui
+     il Lua del server sa leggere.
+
+     Serve perche' il sito vede la posizione solo quando arrivano i dati, ogni
+     mezzo minuto: chi entra in una citta' e ne esce nel mezzo non ci e' mai
+     stato. Qui invece il controllo avviene a ogni scatto del timer e, appena
+     si entra, parte un evento — che e' un fatto preciso, non una posizione da
+     interpretare.
+
+     Una zona raggiunta si segna in ModData e non si ripete: l'evento vale una
+     volta per personaggio. Al wipe sparisce col mondo, come deve.
+
+     Formato del file, una riga per zona:  codice x1 y1 x2 y2 ]]
+local ZONE_FILE = "ITAPz_Zone.txt"
+local ZONE_STORE = "ITAPzZone"
+
+local zone = {}
+
+local function caricaZone()
+    local caricate = {}
+    pcall(function()
+        local reader = getFileReader(ZONE_FILE, false)
+        if not reader then return end
+        local line = reader:readLine()
+        while line ~= nil do
+            local codice, x1, y1, x2, y2 =
+                -- Il trattino va protetto: nei modelli Lua "-" da solo e'
+                -- un quantificatore, non il segno meno.
+                line:match("^%s*([%w_]+)%s+(%-?%d+)%s+(%-?%d+)%s+(%-?%d+)%s+(%-?%d+)%s*$")
+            if codice then
+                table.insert(caricate, {
+                    codice = codice,
+                    x1 = tonumber(x1), y1 = tonumber(y1),
+                    x2 = tonumber(x2), y2 = tonumber(y2),
+                })
+            end
+            line = reader:readLine()
+        end
+        reader:close()
+    end)
+    zone = caricate
+    print("ITAPz: zone caricate: " .. #zone)
+end
+
+local function zoneRaggiunte(username)
+    local tutte = ModData.getOrCreate(ZONE_STORE)
+    if not tutte[username] then tutte[username] = {} end
+    return tutte[username]
+end
+
+-- Dichiarata qui e definita piu' in basso: il corpo usa emitEvent, che in Lua
+-- e' una locale che nasce dopo. Senza questa dichiarazione la funzione
+-- vedrebbe una globale inesistente e morirebbe dentro il pcall che la chiama,
+-- in silenzio.
+local controllaZone
+
+
 --[[ Segna dove sono adesso tutti i giocatori online.
 
      Gira a ogni scatto del timer, anche quando non e' ancora ora di spedire i
@@ -419,7 +479,11 @@ local function annotaTutti()
         local p = players:get(i)
         if p then
             pcall(function()
-                annotaPosizione(p:getUsername(), math.floor(p:getX() or 0), math.floor(p:getY() or 0))
+                local nome = p:getUsername()
+                local x = math.floor(p:getX() or 0)
+                local y = math.floor(p:getY() or 0)
+                annotaPosizione(nome, x, y)
+                controllaZone(p, nome, x, y)
             end)
         end
     end
@@ -585,6 +649,26 @@ local function emitEvent(code, player, detail)
     }))
 end
 
+--[[ Guarda se il giocatore e' dentro una zona nuova, e in tal caso lo dice.
+
+     Il confronto e' sui bordi inclusi, come sul sito: un giocatore esattamente
+     sul confine e' dentro. ]]
+controllaZone = function(player, username, x, y)
+    if #zone == 0 or not username then return end
+
+    local viste
+    if not pcall(function() viste = zoneRaggiunte(username) end) then return end
+
+    for _, z in ipairs(zone) do
+        if not viste[z.codice]
+            and x >= z.x1 and x <= z.x2 and y >= z.y1 and y <= z.y2 then
+            viste[z.codice] = true
+            emitEvent("zona", player, z.codice)
+        end
+    end
+end
+
+
 local function hookEvent(name, fn)
     pcall(function()
         if Events and Events[name] and Events[name].Add then
@@ -699,6 +783,8 @@ hook("OnServerStarted", function()
     lastSyncTime = realTime() or 0
     syncData()
 end)
+
+caricaZone()
 
 print("ITAPz: Data Sync caricato (intervallo: " .. INTERVAL .. "s, output: log del server)")
 
