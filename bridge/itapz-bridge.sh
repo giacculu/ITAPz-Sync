@@ -46,6 +46,22 @@ POLL_SECONDS="${POLL_SECONDS:-2}"
 # uno nuovo, e restando appesi al vecchio non arriverebbe piu' niente.
 LOG_FILE_FISSO="${LOG_FILE:-}"
 
+# --- messaggi che si ripetono ------------------------------------------------
+# In ciclo un giro passa ogni due secondi: dire "niente di nuovo" ogni volta
+# riempirebbe il journal di righe inutili e ci seppellirebbe dentro quelle che
+# contano. Si ripete al massimo una volta ogni SILENZIO_SECONDI, e la prima
+# volta esce sempre.
+SILENZIO_SECONDI="${SILENZIO_SECONDI:-300}"
+ULTIMO_SILENZIOSO=0
+
+silenzioso() {
+  ADESSO=$(date +%s)
+  if [ "$((ADESSO - ULTIMO_SILENZIOSO))" -ge "$SILENZIO_SECONDI" ]; then
+    ULTIMO_SILENZIOSO="$ADESSO"
+    echo "$(date '+%F %T') $1"
+  fi
+}
+
 giro() {
 
 STATE_FILE="$ZOMBOID_DIR/.itapz_bridge_last"
@@ -67,7 +83,7 @@ TMP_RESP="$TMP_DIR/risposta.txt"
   fi
 
   if [ -z "${LOG_FILE:-}" ] || [ ! -f "$LOG_FILE" ]; then
-    echo "$(date '+%F %T') nessun DebugLog-server in $ZOMBOID_DIR/Logs/"
+    silenzioso "nessun DebugLog-server in $ZOMBOID_DIR/Logs/"
     return 0
   fi
 
@@ -111,7 +127,7 @@ TMP_RESP="$TMP_DIR/risposta.txt"
   BLOCK=$(awk '/ITAPZ_SYNC_BEGIN/{buf=""; inb=1} inb{buf=buf $0 "\n"} /ITAPZ_SYNC_END/{if(inb){last=buf; inb=0}} END{printf "%s", last}' "$LOG_FILE")
 
   if [ -z "$BLOCK" ] && [ -z "$EVENTS" ]; then
-    echo "$(date '+%F %T') niente di nuovo (la mod non ha ancora emesso dati)"
+    silenzioso "niente di nuovo (la mod non ha ancora emesso dati)"
     printf '%s\n%s\n' "$LOG_FILE" "$((OFFSET + NEW_BYTES))" > "$MARK_FILE"
     return 0
   fi
