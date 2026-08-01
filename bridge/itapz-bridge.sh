@@ -50,8 +50,15 @@ giro() {
 
 STATE_FILE="$ZOMBOID_DIR/.itapz_bridge_last"
 MARK_FILE="$ZOMBOID_DIR/.itapz_bridge_mark"
-TMP_PAYLOAD="/tmp/itapz_payload.json"
-TMP_NEW="/tmp/itapz_new.txt"
+# I file di lavoro stanno in una cartella che porta dentro l'utente. Con un
+# nome fisso in /tmp bastava che lo script fosse girato una volta da root —
+# come faceva da cron — perche' poi, da servizio con un altro utente, non
+# potesse piu' sovrascriverli: "Permission denied" e riavvio in ciclo.
+TMP_DIR="${TMPDIR:-/tmp}/itapz-bridge-$(id -u)"
+mkdir -p "$TMP_DIR"
+TMP_PAYLOAD="$TMP_DIR/payload.json"
+TMP_NEW="$TMP_DIR/new.txt"
+TMP_RESP="$TMP_DIR/risposta.txt"
 
   # Log piu' recente, se non indicato esplicitamente
   LOG_FILE="$LOG_FILE_FISSO"
@@ -161,13 +168,13 @@ TMP_NEW="/tmp/itapz_new.txt"
   fi
 
   if [ -n "$API_KEY" ]; then
-    HTTP_CODE=$(curl -sS -o /tmp/itapz_bridge_resp -w '%{http_code}' \
+    HTTP_CODE=$(curl -sS -o "$TMP_RESP" -w '%{http_code}' \
       -X POST "$SITE_URL/api/sync-server-data" \
       -H 'Content-Type: application/json' \
       -H "X-API-Key: $API_KEY" \
       --data-binary "@$TMP_PAYLOAD" --max-time 20) || HTTP_CODE=000
   else
-    HTTP_CODE=$(curl -sS -o /tmp/itapz_bridge_resp -w '%{http_code}' \
+    HTTP_CODE=$(curl -sS -o "$TMP_RESP" -w '%{http_code}' \
       -X POST "$SITE_URL/api/sync-server-data" \
       -H 'Content-Type: application/json' \
       --data-binary "@$TMP_PAYLOAD" --max-time 20) || HTTP_CODE=000
@@ -178,9 +185,9 @@ TMP_NEW="/tmp/itapz_new.txt"
     # Il segnalibro avanza SOLO dopo un invio riuscito: se la POST fallisce, al
     # giro dopo le stesse righe vengono rilette e nessun evento va perso.
     printf '%s\n%s\n' "$LOG_FILE" "$((OFFSET + NEW_BYTES))" > "$MARK_FILE"
-    echo "$(date '+%F %T') OK $(cat /tmp/itapz_bridge_resp)"
+    echo "$(date '+%F %T') OK $(cat "$TMP_RESP")"
   else
-    echo "$(date '+%F %T') FALLITO http=$HTTP_CODE $(cat /tmp/itapz_bridge_resp 2>/dev/null)"
+    echo "$(date '+%F %T') FALLITO http=$HTTP_CODE $(cat "$TMP_RESP" 2>/dev/null)"
     return 1
   fi
 }

@@ -19,7 +19,12 @@ ZOMBOID_DIR="${ZOMBOID_DIR:-/home/administrator/Zomboid}"
 SITE_URL="${SITE_URL:-http://localhost:3000}"
 API_KEY="${API_KEY:-}"
 
-TMP="/tmp/itapz_identita.json"
+# Stessa accortezza del bridge: un nome fisso in /tmp diventa di chi lo crea
+# per primo, e chi lo lancia dopo con un altro utente non puo' sovrascriverlo.
+TMP_DIR="${TMPDIR:-/tmp}/itapz-identita-$(id -u)"
+mkdir -p "$TMP_DIR"
+TMP="$TMP_DIR/identita.json"
+TMP_RESP="$TMP_DIR/risposta.txt"
 
 # Gli handshake iniziali hanno steam-id="0" e username="null": si tengono solo
 # le righe con uno Steam ID vero (iniziano tutti per 7656) e un nome reale.
@@ -43,17 +48,17 @@ echo "Identita' trovate nello storico: $TROVATE"
 # `players` vuoto: al sito serve solo la parte identita'
 printf '{"players":[],"identities":[%s]}' "$IDENTITIES" > "$TMP"
 
-HTTP_CODE=$(curl -sS -o /tmp/itapz_identita_resp -w '%{http_code}' \
+HTTP_CODE=$(curl -sS -o "$TMP_RESP" -w '%{http_code}' \
   -X POST "$SITE_URL/api/sync-server-data" \
   -H 'Content-Type: application/json' \
   -H "X-API-Key: $API_KEY" \
   --data-binary "@$TMP" --max-time 30) || HTTP_CODE=000
 
 if [ "$HTTP_CODE" = "200" ]; then
-  echo "OK — $(cat /tmp/itapz_identita_resp)"
+  echo "OK — $(cat "$TMP_RESP")"
   echo "I personaggi verranno collegati agli account al prossimo sync,"
   echo "o subito quando il giocatore accede al sito."
 else
-  echo "FALLITO http=$HTTP_CODE $(cat /tmp/itapz_identita_resp 2>/dev/null)"
+  echo "FALLITO http=$HTTP_CODE $(cat "$TMP_RESP" 2>/dev/null)"
   exit 1
 fi
