@@ -326,6 +326,46 @@ def _db_personaggi():
     return os.path.join(_percorso_salvataggio(), "players.db")
 
 
+def _db_account():
+    """Il database degli account del server: login, password, permessi.
+
+    Sta in db/<nome>.db, fuori dalla cartella del mondo: un wipe del
+    salvataggio non lo tocca, ed e' giusto — chi ha perso il personaggio puo'
+    comunque rientrare.
+    """
+    return os.path.join(ZOMBOID_DIR, "db", f"{nome_server()}.db")
+
+
+def _cancella_da_db(percorso, username, etichetta, fatte):
+    """Toglie un nome da tutte le tabelle che hanno una colonna 'username'.
+
+    Restituisce quante righe ha rimosso. Il database va toccato a server
+    fermo: aperto, lo tiene in memoria e riscriverebbe sopra.
+    """
+    if not os.path.exists(percorso):
+        fatte.append(f"{etichetta}: database non trovato ({percorso})")
+        return 0
+
+    conn = sqlite3.connect(percorso)
+    try:
+        tabelle = _tabelle_con_username(conn)
+        if not tabelle:
+            fatte.append(f"{etichetta}: nessuna tabella con una colonna 'username'")
+            return 0
+        totale = 0
+        for tabella, colonna in tabelle:
+            cur = conn.execute(
+                f'DELETE FROM "{tabella}" WHERE "{colonna}" = ?', (username,)
+            )
+            if cur.rowcount > 0:
+                fatte.append(f"{etichetta}: {tabella}, {cur.rowcount} righe rimosse")
+                totale += cur.rowcount
+        conn.commit()
+        return totale
+    finally:
+        conn.close()
+
+
 def _tabelle_con_username(conn):
     """Tabelle che hanno una colonna con lo username, con il nome esatto.
 
@@ -411,13 +451,17 @@ def delete_character(payload):
 
     fatte = []
 
-    # L'account si toglie via RCON, che funziona a server acceso: e' l'unica
-    # via documentata, e non richiede di fermare niente.
+    # L'account si prova prima via RCON, che funziona a server acceso ed e' la
+    # via che il gioco offre. Puo' pero' non rispondere — server gia' fermo,
+    # ancora in avvio, RCON spento — e in quel caso l'account restava li'
+    # mentre il comando risultava riuscito.
+    rcon_ok = False
     if anche_account:
         try:
-            fatte.append("account: " + run_rcon(f'removeuserfromwhitelist "{username}"'))
+            fatte.append("account (RCON): " + run_rcon(f'removeuserfromwhitelist "{username}"'))
+            rcon_ok = True
         except Exception as e:
-            fatte.append(f"account: NON rimosso ({e})")
+            fatte.append(f"account (RCON): non riuscito ({e}), si prova sul file")
 
     fatte.append(run_systemctl("stop"))
     time.sleep(3)
@@ -428,27 +472,27 @@ def delete_character(payload):
     shutil.copy2(db, copia)
     fatte.append(f"copia di sicurezza: {copia}")
 
-    conn = sqlite3.connect(db)
-    try:
-        tabelle = _tabelle_con_username(conn)
-        if not tabelle:
-            raise RuntimeError(
-            "nessuna tabella con una colonna 'username' in players.db: "
-            "lancia INSPECT_SAVE per vedere com'e' fatto"
+    # Stessa funzione che toglie gli account: e' lo stesso lavoro su un altro
+    # file, e tenerne due copie significherebbe correggerle due volte.
+    totale = _cancella_da_db(db, username, "personaggio", fatte)
+    if totale == 0:
+        fatte.append(
+            f'personaggio: nessuna riga per "{username}". Il nome non combacia, '
+            "oppure lancia INSPECT_SAVE per vedere com'e' fatto players.db"
         )
-        totale = 0
-        for tabella, colonna in tabelle:
-            cur = conn.execute(
-                f'DELETE FROM "{tabella}" WHERE "{colonna}" = ?', (username,)
-            )
-            if cur.rowcount > 0:
-                fatte.append(f"{tabella}: {cur.rowcount} righe rimosse")
-                totale += cur.rowcount
-        conn.commit()
-        if totale == 0:
-            fatte.append(f"nessuna riga per \"{username}\": forse il nome non combacia")
-    finally:
-        conn.close()
+
+    # Se RCON non ha risposto, ora il server e' fermo e il file degli account
+    # si puo' toccare direttamente: e' lo stesso lavoro, fatto dall'altra
+    # parte. Con una copia di sicurezza prima, come per i personaggi.
+    if anche_account and not rcon_ok:
+        account_db = _db_account()
+        if os.path.exists(account_db):
+            copia_account = os.path.join(WIPE_BACKUP_DIR, f"{os.path.basename(account_db)}.{stamp}")
+            shutil.copy2(account_db, copia_account)
+            fatte.append(f"copia degli account: {copia_account}")
+        quanti = _cancella_da_db(account_db, username, "account (file)", fatte)
+        if quanti == 0:
+            fatte.append(f'account (file): nessuna riga per "{username}"')
 
     fatte.append(run_systemctl("start"))
     return "\n".join(fatte)
