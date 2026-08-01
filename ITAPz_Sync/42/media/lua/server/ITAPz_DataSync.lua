@@ -233,6 +233,124 @@ end
 --[[ Raccoglie i dati di tutti i giocatori online.
      Ogni getter è protetto: un metodo assente in una versione B42 non
      interrompe la raccolta. ]]
+--[[ Marcatori permanenti.
+
+     Alcuni achievement chiedono cose che durano pochi secondi: essere a fuoco,
+     sanguinare, toccare la velocita' massima. La sincronizzazione passa ogni
+     30 secondi, quindi guardare solo lo stato del momento vorrebbe dire
+     perderli quasi sempre.
+
+     Qui ogni marcatore, una volta visto, resta: si tiene in ModData, che il
+     gioco salva col mondo. Al wipe sparisce col resto, ed e' giusto cosi'.
+
+     I nomi devono combaciare con FLAG_TARGETS in src/lib/achievements.ts del
+     sito: un marcatore scritto diverso e' un achievement che non scatta mai. ]]
+local FLAG_STORE = "ITAPzFlags"
+
+local function flagsDi(username)
+    local tutti = ModData.getOrCreate(FLAG_STORE)
+    if not tutti[username] then tutti[username] = {} end
+    return tutti[username]
+end
+
+--[[ Ubriacatura: la scala del gioco arriva a 100. Si chiede quasi il massimo
+     invece del massimo esatto, perche' il valore cala da solo e centrare il
+     100 al momento del controllo sarebbe questione di fortuna. ]]
+local SOGLIA_UBRIACO = 90
+
+--[[ Velocita' massima del server. `SpeedLimit` e' l'opzione che la impone;
+     se non si riesce a leggerla si usa il valore predefinito del gioco. ]]
+local function limiteVelocita()
+    local limite = nil
+    pcall(function()
+        local opts = getServerOptions()
+        if opts then limite = tonumber(opts:getOption("SpeedLimit")) end
+    end)
+    return limite or 70
+end
+
+--[[ XP di carpenteria: qualsiasi valore sopra zero significa aver costruito o
+     smontato qualcosa. Piu' affidabile di un evento di costruzione, che in
+     Build 42 ha cambiato nome piu' volte. ]]
+local function xpCarpenteria(player)
+    local xp = 0
+    pcall(function()
+        local perk = Perks.Woodwork
+        -- In alcune versioni la costante non esiste: si cerca per nome.
+        if not perk then
+            local list = PerkFactory.PerkList
+            for i = 0, list:size() - 1 do
+                local p = list:get(i)
+                if p and tostring(p:getName()) == "Carpentry" then perk = p break end
+            end
+        end
+        if perk then xp = tonumber(player:getXp():getXP(perk)) or 0 end
+    end)
+    return xp
+end
+
+--[[ Aggiorna i marcatori del giocatore e restituisce l'elenco.
+
+     Ogni controllo e' protetto: un metodo che in una versione non esiste deve
+     saltare quel marcatore, non far fallire tutta la raccolta dati. ]]
+local function aggiornaFlags(player, username, infetto, inVeicolo)
+    local flags = {}
+    pcall(function() flags = flagsDi(username) end)
+
+    local function segna(nome, condizione)
+        if flags[nome] then return end
+        local ok, valore = pcall(condizione)
+        if ok and valore then flags[nome] = true end
+    end
+
+    segna("ubriaco", function()
+        return (tonumber(player:getStats():getDrunkenness()) or 0) >= SOGLIA_UBRIACO
+    end)
+    segna("ferito", function()
+        return (tonumber(player:getBodyDamage():getOverallBodyHealth()) or 100) < 100
+    end)
+    segna("avvelenato", function()
+        local bd = player:getBodyDamage()
+        local veleno = tonumber(bd:getPoisonLevel()) or 0
+        local cibo = 0
+        pcall(function() cibo = tonumber(bd:getFoodSicknessLevel()) or 0 end)
+        return veleno > 0 or cibo > 0
+    end)
+    segna("infetto", function() return infetto == true end)
+    segna("sanguina", function()
+        local bd = player:getBodyDamage()
+        local parti = nil
+        pcall(function() parti = bd:getNumPartsBleeding() end)
+        if parti ~= nil then return (tonumber(parti) or 0) > 0 end
+        return bd:isBleeding() == true
+    end)
+    segna("bruciato", function()
+        if player.isOnFire and player:isOnFire() then return true end
+        return player:getBodyDamage():isOnFire() == true
+    end)
+    segna("costruttore", function() return xpCarpenteria(player) > 0 end)
+    segna("velocista", function()
+        if not inVeicolo then return false end
+        local v = player:getVehicle()
+        if not v then return false end
+        return (tonumber(v:getCurrentSpeedKmHour()) or 0) >= limiteVelocita()
+    end)
+    segna("flauto", function()
+        local inv = player:getInventory()
+        if not inv then return false end
+        if inv.containsTypeRecurse and inv:containsTypeRecurse("Flute") then return true end
+        return inv:contains("Flute") == true
+    end)
+
+    local elenco = {}
+    for nome, attivo in pairs(flags) do
+        if attivo then table.insert(elenco, nome) end
+    end
+    table.sort(elenco)
+    return elenco
+end
+
+
 local function collectPlayerData()
     local players = getOnlinePlayers()
     if not players then return {} end
@@ -283,6 +401,12 @@ local function collectPlayerData()
             -- getSurviveDays non esiste in B42: i giorni si derivano dalle ore
             local days = math.floor((tonumber(hours) or 0) / 24)
 
+            -- Marcatori: aggiornati adesso, con lo stato appena letto.
+            local flags = {}
+            if username then
+                pcall(function() flags = aggiornaFlags(p, username, infected, inVehicle) end)
+            end
+
             table.insert(results, {
                 name = username or ("Player_" .. i),
                 occupation = occupation,
@@ -306,6 +430,7 @@ local function collectPlayerData()
                 x = tonumber(px) or 0,
                 y = tonumber(py) or 0,
                 skills = skills,
+                flags = flags,
             })
         end
     end
@@ -393,6 +518,15 @@ hookEvent("OnWeaponHitCharacter", function(attacker, target, weapon)
     local arma = ""
     pcall(function() arma = tostring(weapon:getFullType() or "") end)
     emitEvent("kill_weapon", attacker, arma)
+
+    -- Vittima umana: e' un altro conto, e un altro achievement. Si controlla
+    -- che sia un giocatore diverso dall'attaccante, o un colpo andato male su
+    -- se stessi verrebbe contato come omicidio.
+    local vittima = usernameOf(target)
+    local colpevole = usernameOf(attacker)
+    if vittima and colpevole and vittima ~= colpevole then
+        emitEvent("kill_player", attacker, vittima)
+    end
 end)
 
 -- Morte: OnPlayerDeath non scatta sui server dedicati, OnCharacterDeath si',
