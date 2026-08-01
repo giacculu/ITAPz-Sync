@@ -11,6 +11,7 @@ Comandi supportati:
   START/STOP/RESTART   systemctl sull'unita' del server PZ
   READ_CONFIG   legge il file .ini del server
   WRITE_CONFIG  scrive il .ini (con backup e validazione)
+  WIPE          ferma il server, svuota il salvataggio, riavvia
 
 Uso (servizio systemd, vedi bridge/systemd/):
   SITE_URL=http://localhost:3000 RCON_PASSWORD=xxx ./itapz-agent.py --loop
@@ -24,6 +25,10 @@ Variabili:
                   /home/administrator/Zomboid/Server/servertest.ini)
   PZ_LOG          console del server        (default
                   /home/administrator/Zomboid/server-console.txt)
+  ZOMBOID_DIR     cartella dati del gioco   (default: due livelli sopra
+                  PZ_CONFIG, cioe' /home/administrator/Zomboid)
+  WIPE_BACKUP_DIR dove finiscono i salvataggi spostati dal wipe
+                  (default $ZOMBOID_DIR/wipe-backup)
   LOG_LINES       righe di log inviate      (default 300)
   POLL_SECONDS    intervallo in loop        (default 3)
   HEARTBEAT_SECONDS  intervallo del battito (default 15)
@@ -52,6 +57,13 @@ PZ_CONFIG = os.environ.get(
     "PZ_CONFIG", "/home/administrator/Zomboid/Server/servertest.ini"
 )
 PZ_LOG = os.environ.get("PZ_LOG", "/home/administrator/Zomboid/server-console.txt")
+# La cartella dati sta due livelli sopra il .ini (.../Zomboid/Server/x.ini):
+# ricavarla evita di doverla configurare a mano quando il percorso non e'
+# quello predefinito.
+ZOMBOID_DIR = os.environ.get(
+    "ZOMBOID_DIR", os.path.dirname(os.path.dirname(os.path.abspath(PZ_CONFIG)))
+)
+WIPE_BACKUP_DIR = os.environ.get("WIPE_BACKUP_DIR", os.path.join(ZOMBOID_DIR, "wipe-backup"))
 LOG_LINES = int(os.environ.get("LOG_LINES", "300"))
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
 HEARTBEAT_SECONDS = int(os.environ.get("HEARTBEAT_SECONDS", "15"))
@@ -214,6 +226,82 @@ def run_systemctl(action):
     return out or f"{action} eseguito su {PZ_SERVICE}"
 
 
+def nome_server():
+    """Nome del server, cioe' il nome del file .ini senza estensione.
+
+    E' lo stesso nome che il gioco usa per la cartella del salvataggio e per
+    il file degli account, quindi basta questo per sapere cosa cancellare."""
+    return os.path.splitext(os.path.basename(PZ_CONFIG))[0]
+
+
+def _sposta_o_cancella(percorso, backup, etichetta, stamp, fatte):
+    """Toglie di mezzo un file o una cartella, spostandolo se richiesto."""
+    if not os.path.exists(percorso):
+        fatte.append(f"{etichetta}: non c'era ({percorso})")
+        return
+
+    if backup:
+        os.makedirs(WIPE_BACKUP_DIR, exist_ok=True)
+        destinazione = os.path.join(
+            WIPE_BACKUP_DIR, f"{os.path.basename(percorso)}.{stamp}"
+        )
+        shutil.move(percorso, destinazione)
+        fatte.append(f"{etichetta}: spostato in {destinazione}")
+    elif os.path.isdir(percorso):
+        shutil.rmtree(percorso)
+        fatte.append(f"{etichetta}: cancellato {percorso}")
+    else:
+        os.remove(percorso)
+        fatte.append(f"{etichetta}: cancellato {percorso}")
+
+
+def run_wipe(payload):
+    """Wipe del server: ferma, svuota, riavvia.
+
+    Il mondo di Project Zomboid sta tutto in Saves/Multiplayer/<nome>: mappa,
+    costruzioni, veicoli e personaggi. Gli account (login e password) stanno
+    invece in db/<nome>.db, e si toccano solo se richiesto — cancellarli
+    obbligherebbe tutti a registrarsi di nuovo, che di solito non e' quel che
+    si vuole da un wipe.
+
+    Con `backup` le cartelle vengono spostate invece che cancellate: un wipe
+    non si annulla, e avere ancora il mondo di ieri e' l'unica rete."""
+    try:
+        opz = json.loads(payload or "{}")
+    except Exception:
+        opz = {}
+
+    mondo = opz.get("mondo", True)
+    account = opz.get("account", False)
+    backup = opz.get("backup", True)
+
+    if not mondo and not account:
+        raise RuntimeError("wipe senza niente da cancellare")
+
+    nome = nome_server()
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    fatte = []
+
+    # Il server va fermo prima: cancellare sotto i piedi di un processo che
+    # scrive lascerebbe file a meta' e un mondo corrotto al riavvio.
+    fatte.append(run_systemctl("stop"))
+    time.sleep(3)
+
+    if mondo:
+        _sposta_o_cancella(
+            os.path.join(ZOMBOID_DIR, "Saves", "Multiplayer", nome),
+            backup, "mondo e personaggi", stamp, fatte,
+        )
+    if account:
+        _sposta_o_cancella(
+            os.path.join(ZOMBOID_DIR, "db", f"{nome}.db"),
+            backup, "account di gioco", stamp, fatte,
+        )
+
+    fatte.append(run_systemctl("start"))
+    return "\n".join(fatte)
+
+
 def read_config():
     with open(PZ_CONFIG, "r", encoding="utf-8", errors="replace") as f:
         return f.read()
@@ -338,6 +426,8 @@ def execute(cmd):
         return read_config()
     if t == "WRITE_CONFIG":
         return write_config(cmd["payload"])
+    if t == "WIPE":
+        return run_wipe(cmd.get("payload"))
     raise RuntimeError(f"tipo comando sconosciuto: {t}")
 
 
