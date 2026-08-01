@@ -16,6 +16,27 @@ Formato nel log:
   ITAPZ_SYNC_END
 --]]
 
+--[[ Solo sul server.
+
+     Build 42 carica media/lua/server anche sul CLIENT quando ci si collega a
+     una partita in rete. Li' questa mod non serve a niente — nessuno legge il
+     log del giocatore — ma i suoi agganci girano lo stesso, su oggetti che il
+     client ha solo a meta' mentre carica.
+
+     Uscire subito toglie di mezzo tutto quel rischio e un po' di rumore nel
+     log di chi gioca. `isClient()` e' vero solo sul client collegato a un
+     server dedicato: in singleplayer resta falso, e li' la mod puo' girare. ]]
+local function soloClient()
+    local risposta = false
+    pcall(function() risposta = isClient() == true end)
+    return risposta
+end
+
+if soloClient() then
+    print("ITAPz: mod server-side, niente da fare sul client")
+    return
+end
+
 -- ============================ CONFIGURAZIONE ============================
 -- NON modificare questo file (i file Workshop vengono sovrascritti agli
 -- aggiornamenti). Per cambiare l'intervallo crea il file

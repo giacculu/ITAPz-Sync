@@ -45,6 +45,10 @@ ModData = {
   exists = function(nome) return __moddata[nome] ~= nil end,
 }
 
+-- Sul server dedicato `isClient()` e' falso: e' li' che la mod deve girare.
+isClient = function() return false end
+isServer = function() return true end
+
 function instanceof(v, className)
   if type(v) ~= "table" then return false end
   return v.__class == className
@@ -241,3 +245,23 @@ def test_uno_zombie_non_conta_come_giocatore(mod):
     ]
     assert "kill_weapon" in codici
     assert "kill_player" not in codici, "uno zombie non e' un giocatore"
+
+
+def test_sul_client_la_mod_non_fa_niente():
+    """Build 42 carica media/lua/server anche sul client collegato in rete.
+
+    Li' questa mod non serve — nessuno legge il log del giocatore — e i suoi
+    agganci girerebbero su oggetti che il client ha solo a meta' mentre carica.
+    """
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    lua.execute(PRELUDE)
+    lua.execute("isClient = function() return true end")
+    with open(SYNC_PATH, encoding="utf-8") as f:
+        lua.execute(f.read())
+
+    righe = lua.globals()["__lines"]
+    stampate = [righe[i] for i in range(1, len(righe) + 1)]
+    assert not any(r.startswith("ITAPZ_") for r in stampate), (
+        "sul client la mod ha emesso dati: " + str(stampate)
+    )
+    assert any("niente da fare sul client" in r for r in stampate)
