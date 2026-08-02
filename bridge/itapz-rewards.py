@@ -195,6 +195,25 @@ def http_json(url, method="GET", payload=None):
         return json.loads(raw) if raw else {}
 
 
+def player_missing_reply(low, player):
+    """Il reply di `additem` dice che e' il GIOCATORE a non esserci?
+
+    Se nel reply compare il nome del giocatore accanto a un "non trovato",
+    o il testo parla esplicitamente di un player inesistente, e' il giocatore
+    che manca — non l'oggetto — e la consegna deve RESTARE in coda, non
+    fallire. L'oggetto sbagliato e' invece un errore vero (FAILED).
+    """
+    p = player.lower()
+    for esc in (f'"{p}"', f"'{p}'"):
+        if esc in low and any(w in low for w in ("not found", "unknown", "no such", "exist")):
+            return True
+    return any(
+        w in low
+        for w in ("player not found", "no such player", "no player",
+                  "cannot find player", "unable to find player", "player does not exist")
+    )
+
+
 def main():
     if not RCON_PASSWORD:
         print("ERRORE: RCON_PASSWORD non impostata", file=sys.stderr)
@@ -249,9 +268,9 @@ def main():
                 reply = rcon.command(cmd)
                 low = reply.lower()
                 ok = not any(w in low for w in ("unknown", "error", "not found", "no such"))
-                status = "DELIVERED" if ok else "FAILED"
-                print(f"{status}: {player} <- {item} x{qty} :: {reply}")
                 if ok:
+                    status = "DELIVERED"
+                    print(f"{status}: {player} <- {item} x{qty} :: {reply}")
                     # Messaggio privato in gioco: la mod lo consegna solo a lui.
                     if append_notify is not None:
                         etichetta = (d.get("message") or item).strip()
@@ -261,6 +280,21 @@ def main():
                             player,
                             f"Hai ricevuto: {etichetta} x{qty}",
                         )
+                else:
+                    # Se a mancare e' il GIOCATORE — nome non rintracciato da
+                    # RCON o disconnessione di mezzo secondo — non e' un
+                    # fallimento, e' solo presto: la consegna resta in coda e
+                    # riprovera' al prossimo giro. Si dichiara FAILED solo se
+                    # l'additem e' andato storto davvero (es. oggetto errato).
+                    if online_lower:
+                        assente = player.lower() not in online_lower
+                    else:
+                        assente = player_missing_reply(low, player)
+                    if assente:
+                        print(f"IN ATTESA: {player} non rintracciato da RCON, {item} resta in coda")
+                        continue
+                    status = "FAILED"
+                    print(f"FAILED: {player} <- {item} x{qty} :: {reply}")
             except Exception as e:
                 status, reply = "FAILED", str(e)
                 print(f"FAILED: {player} <- {item} :: {reply}", file=sys.stderr)
