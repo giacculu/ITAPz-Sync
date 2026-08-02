@@ -695,7 +695,7 @@ VPS_FILE_MAP = {
 def _vps_config(*args, contenuto=None):
     try:
         esito = subprocess.run(
-            ["sudo", "-n", "/usr/local/bin/itapz-vps-config", *args],
+            ["sudo", "-n", "/usr/local/bin/itapz-vps-config.sh", *args],
             input=contenuto,
             capture_output=True,
             text=True,

@@ -12,7 +12,7 @@ Cmnd_Alias ITAPZ_UPDATE = /usr/local/bin/itapz-update.sh
 
 # Legge/scrive gli env di agent e bridge e il file cron (solo le chiavi
 # ammesse, mai un percorso arbitrario): serve al pannello admin.
-Cmnd_Alias ITAPZ_CONFIG = /usr/local/bin/itapz-vps-config
+Cmnd_Alias ITAPZ_CONFIG = /usr/local/bin/itapz-vps-config.sh
 
 # L'utente deve essere lo stesso di User= in itapz-agent.service.
 administrator ALL=(ALL) NOPASSWD: ITAPZ_PZ, ITAPZ_UPDATE, ITAPZ_CONFIG
