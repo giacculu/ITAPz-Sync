@@ -62,6 +62,8 @@ RCON_HOST = os.environ.get("RCON_HOST", "127.0.0.1")
 RCON_PORT = int(os.environ.get("RCON_PORT", "27015"))
 RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "")
 PZ_SERVICE = os.environ.get("PZ_SERVICE", "pzserver")
+BRIDGE_SERVICE = os.environ.get("BRIDGE_SERVICE", "itapz-bridge")
+AGENT_SERVICE = os.environ.get("AGENT_SERVICE", "itapz-agent")
 PZ_CONFIG = os.environ.get(
     "PZ_CONFIG", "/home/administrator/Zomboid/Server/servertest.ini"
 )
@@ -234,6 +236,40 @@ def run_systemctl(action):
     if res.returncode != 0:
         raise RuntimeError(out or f"systemctl {action} uscito con {res.returncode}")
     return out or f"{action} eseguito su {PZ_SERVICE}"
+
+
+def _systemctl_unit(action, unit):
+    """systemctl su un'unita' qualsiasi (bridge/agent). Sudoers ristretto."""
+    res = subprocess.run(
+        ["sudo", "-n", "/usr/bin/systemctl", action, unit],
+        capture_output=True, text=True, timeout=60,
+    )
+    out = (res.stdout + res.stderr).strip()
+    if res.returncode != 0:
+        raise RuntimeError(out or f"systemctl {action} {unit} uscito con {res.returncode}")
+    return out or f"{action} {unit} ok"
+
+
+def sync_agents(_payload=None):
+    """Riavvia bridge e agent, per applicare modifiche a config/dati dal pannello.
+
+    Il bridge (pipeline dati) si riavvia subito. L'agent si riavvia da solo
+    DOPO aver risposto: un restart sincrono qui ucciderebbe questo processo
+    prima di mandare l'esito, e il comando resterebbe PENDING. Si lancia
+    staccato, con un piccolo ritardo.
+    """
+    messaggi = []
+    try:
+        messaggi.append(_systemctl_unit("restart", BRIDGE_SERVICE))
+    except Exception as e:
+        messaggi.append(f"bridge NON riavviato: {e}")
+
+    subprocess.Popen(
+        ["bash", "-c", f"sleep 3 && sudo -n /usr/bin/systemctl restart {AGENT_SERVICE}"],
+        start_new_session=True,
+    )
+    messaggi.append(f"{AGENT_SERVICE} in riavvio")
+    return " | ".join(messaggi)
 
 
 def nome_server():
@@ -628,6 +664,8 @@ def execute(cmd):
         return delete_character(cmd.get("payload"))
     if t == "INSPECT_SAVE":
         return inspect_save(cmd.get("payload"))
+    if t == "SYNC_AGENTS":
+        return sync_agents(cmd.get("payload"))
     raise RuntimeError(f"tipo comando sconosciuto: {t}")
 
 
