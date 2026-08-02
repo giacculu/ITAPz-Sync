@@ -45,7 +45,7 @@ end
 --
 --   INTERVAL=15
 --
-local DEFAULT_INTERVAL = 10 -- secondi tra due emissioni
+local DEFAULT_INTERVAL = 30 -- secondi tra due emissioni
 
 local function loadInterval()
     local interval = DEFAULT_INTERVAL
@@ -95,8 +95,16 @@ local function toJson(t)
     return "null"
 end
 
---[[ Tratti del personaggio (B42):
-     player:getCharacterTraits():getKnownTraits() -> lista, trait:getName() ]]
+--[[ Tratti del personaggio (B42).
+
+     Si manda il "type" del tratto (es. "strong", "nightowl"), non il nome
+     tradotto: il sito ha la sua tabella id -> nome italiano + icona, cosi' la
+     resa non dipende da come il gioco traduce e le icone si agganciano per id.
+
+     getKnownTraits() restituisce le voci; da ognuna si risale alla definizione
+     con CharacterTraitDefinition.getCharacterTraitDefinition(...) e se ne legge
+     getType(). Se qualcosa non risponde si ripiega su getName()/tostring, per
+     non perdere il tratto del tutto. ]]
 local function getTraits(player)
     local list = {}
     pcall(function()
@@ -107,9 +115,14 @@ local function getTraits(player)
         for i = 0, known:size() - 1 do
             local t = known:get(i)
             if t then
-                local name = nil
-                pcall(function() name = t:getName() end)
-                table.insert(list, name or tostring(t))
+                local id = nil
+                pcall(function()
+                    local def = CharacterTraitDefinition.getCharacterTraitDefinition(t)
+                    if def and def.getType then id = def:getType() end
+                end)
+                if not id then pcall(function() id = t:getType() end) end
+                if not id then pcall(function() id = t:getName() end) end
+                table.insert(list, tostring(id or t))
             end
         end
     end)
@@ -324,13 +337,55 @@ local function aggiornaFlags(player, username, infetto, inVeicolo)
         if ok and valore then flags[nome] = true end
     end
 
+    --[[ Livello di un moodle (0-4), o 0 se il tipo non esiste in questa
+         versione. Il moodle e' cio' che il gioco mostra al giocatore, piu'
+         affidabile del valore grezzo che cala da solo fra un sync e l'altro. ]]
+    local function moodle(tipo)
+        local n = 0
+        pcall(function()
+            local m = player:getMoodles()
+            if m and tipo then n = tonumber(m:getMoodleLevel(tipo)) or 0 end
+        end)
+        return n
+    end
+
+    --[[ Il fuoco dura pochi secondi e un sync ogni tanto lo perde quasi sempre.
+         Le ustioni invece restano: se una parte del corpo e' bruciata, il
+         giocatore e' stato a fuoco. Cosi' il marcatore scatta anche a fiamme
+         gia' spente. ]]
+    local function haUstioni()
+        local ok, res = pcall(function()
+            local bd = player:getBodyDamage()
+            if bd.isOnFire and bd:isOnFire() then return true end
+            local parti = nil
+            pcall(function() parti = bd:getBodyParts() end)
+            if parti and parti.size then
+                for i = 0, parti:size() - 1 do
+                    local bp = parti:get(i)
+                    if bp then
+                        if bp.isBurnt and bp:isBurnt() then return true end
+                        if bp.getBurnTime and (tonumber(bp:getBurnTime()) or 0) > 0 then return true end
+                    end
+                end
+            end
+            return false
+        end)
+        return ok and res == true
+    end
+
     segna("ubriaco", function()
-        return (tonumber(player:getStats():getDrunkenness()) or 0) >= SOGLIA_UBRIACO
+        -- Moodle "Ubriaco" (livello 3) o oltre; in ripiego il valore grezzo con
+        -- una soglia bassa, perche' 90 non lo prendeva quasi mai.
+        if moodle(MoodleType.DRUNK) >= 3 then return true end
+        return (tonumber(player:getStats():getDrunkenness()) or 0) >= 40
     end)
     segna("ferito", function()
         return (tonumber(player:getBodyDamage():getOverallBodyHealth()) or 100) < 100
     end)
     segna("avvelenato", function()
+        -- Il moodle della nausea (avvelenamento da cibo) se c'e', altrimenti i
+        -- valori grezzi di veleno e malattia da cibo.
+        if moodle(MoodleType.SICK) >= 1 then return true end
         local bd = player:getBodyDamage()
         local veleno = tonumber(bd:getPoisonLevel()) or 0
         local cibo = 0
@@ -347,7 +402,8 @@ local function aggiornaFlags(player, username, infetto, inVeicolo)
     end)
     segna("bruciato", function()
         if player.isOnFire and player:isOnFire() then return true end
-        return player:getBodyDamage():isOnFire() == true
+        if player:getBodyDamage():isOnFire() == true then return true end
+        return haUstioni()
     end)
     segna("costruttore", function() return xpCarpenteria(player) > 0 end)
     segna("velocista", function()
@@ -519,12 +575,22 @@ local function collectPlayerData()
             local hasSafehouse, inVehicle = false, false
             local px, py = 0, 0
 
+            local accessLevel = ""
             pcall(function() username = p:getUsername() end)
+            local forename, surname = "", ""
             pcall(function()
                 local desc = p:getDescriptor()
-                if desc then occupation = tostring(desc:getCharacterProfession() or "") end
+                if desc then
+                    occupation = tostring(desc:getCharacterProfession() or "")
+                    forename = tostring(desc:getForename() or "")
+                    surname = tostring(desc:getSurname() or "")
+                end
             end)
             pcall(function() trait = getTraits(p) end)
+            -- Ruolo sul server (admin/moderator/gm/observer, vuoto per i comuni):
+            -- il sito ci nasconde lo staff da classifiche e profili, senza dover
+            -- indovinare dal nickname.
+            pcall(function() accessLevel = tostring(p:getAccessLevel() or "") end)
 
             pcall(function() hours = p:getHoursSurvived() or 0 end)
             pcall(function() zombies = p:getZombieKills() or 0 end)
@@ -559,7 +625,10 @@ local function collectPlayerData()
             table.insert(results, {
                 name = username or ("Player_" .. i),
                 occupation = occupation,
+                forename = forename,
+                surname = surname,
                 trait = trait,
+                accessLevel = accessLevel,
                 kills = 0,          -- B42: nessun getter "player uccisi"
                 zombies = tonumber(zombies) or 0,
                 daysSurvived = days,
@@ -717,6 +786,53 @@ hookEvent("OnCreateLivingCharacter", function(player)
     emitEvent("new_character", player, "")
 end)
 
+--[[ Scioglimento fazioni richieste dallo staff.
+
+     Il file lo scrive l'agent (mirror della blocklist del sito). Build 42 non
+     ha un comando RCON per sciogliere una fazione: l'unica via dal Lua e'
+     sendFactionDisband, pensata per il client ma qui tentata dal server —
+     va verificata in gioco, potrebbe non avere effetto.
+
+     La mod sul server NON puo' scrivere file, quindi non svuota l'elenco: lo
+     rilegge a ogni giro. Sciogliere una fazione gia' sparita e' un no-op,
+     quindi ripetere non fa danno; e finche' un nome resta nell'elenco, quella
+     fazione viene sciolta appena ricompare. ]]
+local DISBAND_FILE = "ITAPz_Disband.txt"
+
+local function processaDisband()
+    local nomi = {}
+    pcall(function()
+        local reader = getFileReader(DISBAND_FILE, false)
+        if not reader then return end
+        local line = reader:readLine()
+        while line ~= nil do
+            local n = line:match("^%s*(.-)%s*$")
+            if n and n ~= "" then nomi[string.lower(n)] = true end
+            line = reader:readLine()
+        end
+        reader:close()
+    end)
+    if next(nomi) == nil then return end
+
+    pcall(function()
+        local facts = Faction.getFactions()
+        if not facts then return end
+        -- All'indietro: sciogliere una fazione puo' modificare la lista.
+        for i = facts:size() - 1, 0, -1 do
+            local f = facts:get(i)
+            if f then
+                local nome, tag = "", ""
+                pcall(function() nome = tostring(f:getName() or "") end)
+                pcall(function() tag = tostring(f:getTag() or "") end)
+                if nomi[string.lower(nome)] or (tag ~= "" and nomi[string.lower(tag)]) then
+                    pcall(function() sendFactionDisband(f) end)
+                    print("ITAPz: tentato scioglimento fazione '" .. nome .. "'")
+                end
+            end
+        end
+    end)
+end
+
 --[[ Notifiche private in gioco.
 
      Il sito accoda un messaggio per UN solo giocatore (achievement sbloccati,
@@ -782,6 +898,7 @@ local function syncData()
     if not ok then
         print("ITAPz: ERRORE durante la raccolta dati")
     end
+    pcall(processaDisband)
 end
 
 --[[ Timer. OnTick non parte sui server dedicati: si usa EveryOneMinute.
