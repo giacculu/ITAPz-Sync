@@ -42,10 +42,11 @@ if [ "$2" = "cron" ]; then
     while IFS= read -r riga; do
         case "$riga" in
             ""|\#*) continue ;;
-            *) case "$riga" in
-                   */*) ;;
-                   *) echo "riga cron senza comando: $riga" >&2; rm -f "$TMP"; exit 1 ;;
-               esac ;;
+            # Assegnazione variabile in cima al file (KEY=VALUE): valida nei
+            # crontab. Il comando di una riga di cron non inizia mai cosi'.
+            [A-Za-z_]*=*) continue ;;
+            */*) ;;
+            *) echo "riga cron non valida: $riga" >&2; rm -f "$TMP"; exit 1 ;;
         esac
     done < "$TMP"
 else
