@@ -45,7 +45,7 @@ end
 --
 --   INTERVAL=15
 --
-local DEFAULT_INTERVAL = 30 -- secondi tra due emissioni
+local DEFAULT_INTERVAL = 10 -- secondi tra due emissioni
 
 local function loadInterval()
     local interval = DEFAULT_INTERVAL
@@ -717,6 +717,65 @@ hookEvent("OnCreateLivingCharacter", function(player)
     emitEvent("new_character", player, "")
 end)
 
+--[[ Notifiche private in gioco.
+
+     Il sito accoda un messaggio per UN solo giocatore (achievement sbloccati,
+     consegne del battlepass). Non esiste un comando RCON per parlare a uno
+     solo: l'agent e il rewards scrivono una riga in Zomboid/Lua/ITAPz_Notify.txt
+     (formato: <id>\t<username>\t<message>) e qui la si inoltra a quel giocatore
+     con sendServerCommand. Il client la mostra in chat, invisibile agli altri.
+
+     L'id rende la riga unica: una volta inviata si segna in ModData e non si
+     ripete, anche se il file non e' ancora stato ripulito. Se il giocatore e'
+     offline la riga resta in attesa finche' e' nel file. ]]
+local NOTIFY_FILE = "ITAPz_Notify.txt"
+local NOTIFY_STORE = "ITAPzNotify"
+
+local function trovaGiocatore(username)
+    local players = getOnlinePlayers()
+    if not players then return nil end
+    for i = 0, players:size() - 1 do
+        local p = players:get(i)
+        if p then
+            local nome = ""
+            pcall(function() nome = tostring(p:getUsername() or "") end)
+            if nome == username then return p end
+        end
+    end
+    return nil
+end
+
+local function processaNotifiche()
+    local righe = {}
+    pcall(function()
+        local reader = getFileReader(NOTIFY_FILE, false)
+        if not reader then return end
+        local line = reader:readLine()
+        while line ~= nil do
+            table.insert(righe, line)
+            line = reader:readLine()
+        end
+        reader:close()
+    end)
+    if #righe == 0 then return end
+
+    local visti = {}
+    pcall(function() visti = ModData.getOrCreate(NOTIFY_STORE) end)
+
+    for _, riga in ipairs(righe) do
+        local id, nome, msg = riga:match("^([^\t]+)\t([^\t]+)\t(.+)$")
+        if id and nome and msg and not visti[id] then
+            local p = trovaGiocatore(nome)
+            if p then
+                visti[id] = true
+                pcall(function()
+                    sendServerCommand(p, "ITAPz_Sync", "Notify", { message = msg })
+                end)
+            end
+        end
+    end
+end
+
 --[[ Ciclo principale ]]
 local function syncData()
     local ok = pcall(emitData)
@@ -748,6 +807,9 @@ local function onPeriodic()
     -- Prima si annota dove sono tutti, poi si guarda se e' ora di spedire:
     -- e' fra un invio e l'altro che la traccia serve.
     pcall(annotaTutti)
+    -- Notifiche private (achievement, consegne): si inoltrano a ogni scatto,
+    -- senza aspettare l'intervallo di sync.
+    pcall(processaNotifiche)
     local now = realTime()
     if now then
         if now - lastSyncTime >= INTERVAL then

@@ -17,6 +17,9 @@ Variabili:
   RCON_HOST      host del server PZ            (default 127.0.0.1)
   RCON_PORT      porta RCON                    (default 27015)
   RCON_PASSWORD  password RCON                 (obbligatoria)
+  ZOMBOID_DIR    cartella dati del gioco       (default ~/Zomboid)
+  NOTIFY_PATH    file delle notifiche private  (default
+                 $ZOMBOID_DIR/Lua/ITAPz_Notify.txt)
 """
 
 import json
@@ -27,11 +30,17 @@ import sys
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from itapz_notify import append_notify
+
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:3000").rstrip("/")
 API_KEY = os.environ.get("API_KEY", "")
 RCON_HOST = os.environ.get("RCON_HOST", "127.0.0.1")
 RCON_PORT = int(os.environ.get("RCON_PORT", "27015"))
 RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "")
+ZOMBOID_DIR = os.environ.get("ZOMBOID_DIR", os.path.expanduser("~/Zomboid"))
+NOTIFY_PATH = os.environ.get("NOTIFY_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Notify.txt"))
 
 SERVERDATA_AUTH = 3
 SERVERDATA_EXECCOMMAND = 2
@@ -171,6 +180,15 @@ def main():
                 ok = not any(w in low for w in ("unknown", "error", "not found", "no such"))
                 status = "DELIVERED" if ok else "FAILED"
                 print(f"{status}: {player} <- {item} x{qty} :: {reply}")
+                if ok:
+                    # Messaggio privato in gioco: la mod lo consegna solo a lui.
+                    etichetta = (d.get("message") or item).strip()
+                    append_notify(
+                        NOTIFY_PATH,
+                        f"delivery-{d['id']}",
+                        player,
+                        f"Hai ricevuto: {etichetta} x{qty}",
+                    )
             except Exception as e:
                 status, reply = "FAILED", str(e)
                 print(f"FAILED: {player} <- {item} :: {reply}", file=sys.stderr)

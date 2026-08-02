@@ -15,6 +15,9 @@ Comandi supportati:
   DELETE_CHARACTER  cancella un personaggio dal salvataggio (e, se richiesto,
                     il suo account di gioco)
   INSPECT_SAVE  elenca tabelle e file del salvataggio, senza toccare niente
+  NOTIFY        accoda un messaggio PRIVATO in gioco per un giocatore (payload
+                JSON {id, username, message}); la mod lo consegna a quel solo
+                giocatore
 
 L'agent tiene anche aggiornato l'elenco delle zone che la mod usa per dire
 "sei arrivato a Rosewood": lo scarica dal sito e lo scrive dove la mod lo
@@ -56,6 +59,8 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from itapz_notify import append_notify
+
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:3000").rstrip("/")
 API_KEY = os.environ.get("API_KEY", "")
 RCON_HOST = os.environ.get("RCON_HOST", "127.0.0.1")
@@ -74,6 +79,8 @@ PZ_LOG = os.environ.get("PZ_LOG", "/home/administrator/Zomboid/server-console.tx
 ZOMBOID_DIR = os.environ.get(
     "ZOMBOID_DIR", os.path.dirname(os.path.dirname(os.path.abspath(PZ_CONFIG)))
 )
+# File delle notifiche private: la mod lo legge da Zomboid/Lua/.
+NOTIFY_PATH = os.environ.get("NOTIFY_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Notify.txt"))
 WIPE_BACKUP_DIR = os.environ.get("WIPE_BACKUP_DIR", os.path.join(ZOMBOID_DIR, "wipe-backup"))
 LOG_LINES = int(os.environ.get("LOG_LINES", "300"))
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
@@ -644,6 +651,26 @@ def push_log():
         print(f"ERRORE invio log: {e}", file=sys.stderr)
 
 
+def notify_player(payload):
+    """NOTIFY: accoda un messaggio privato per un giocatore.
+
+    Il payload dal sito e' JSON {id, username, message}: id rende la notifica
+    unica (la mod non la manda due volte, anche se il file non e' ancora stato
+    pulito). Il messaggio lo vede solo il destinatario.
+    """
+    try:
+        data = json.loads(payload or "{}")
+    except Exception as e:
+        raise RuntimeError(f"NOTIFY: payload JSON non valido ({e})")
+    username = str(data.get("username", "")).strip()
+    message = str(data.get("message", "")).strip()
+    if not username or not message:
+        raise RuntimeError("NOTIFY: username e message obbligatori")
+    notif_id = str(data.get("id") or "").strip() or f"notify-{int(time.time())}-{os.getpid()}"
+    append_notify(NOTIFY_PATH, notif_id, username, message)
+    return f"notifica privata accodata per {username}"
+
+
 def execute(cmd):
     t = cmd["type"]
     if t == "RCON":
@@ -658,6 +685,8 @@ def execute(cmd):
         return read_config()
     if t == "WRITE_CONFIG":
         return write_config(cmd["payload"])
+    if t == "NOTIFY":
+        return notify_player(cmd.get("payload"))
     if t == "WIPE":
         return run_wipe(cmd.get("payload"))
     if t == "DELETE_CHARACTER":

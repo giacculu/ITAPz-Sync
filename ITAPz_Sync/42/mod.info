@@ -1,4 +1,5 @@
 name=ITAPz Data Sync
 id=ITAPz_Sync
-description=Mod server-side per il server Italian Project Zomboid. Raccoglie le statistiche dei giocatori e le invia al sito italianpz.it. Solo server, non modifica il gameplay.
+description=Mod per il server Italian Project Zomboid. Raccoglie le statistiche dei giocatori e le invia al sito italianpz.it. Inoltre consegna le notifiche private in chat (achievement, consegne battlepass).
+version=1.0.1
 poster=poster.png
