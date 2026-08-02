@@ -24,6 +24,7 @@ Variabili:
 
 import json
 import os
+import re
 import socket
 import struct
 import sys
@@ -32,7 +33,12 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from itapz_notify import append_notify
+# La notifica privata in gioco e' un bonus: se il modulo non c'e' (VPS non
+# ancora aggiornata) la consegna dell'oggetto DEVE comunque funzionare.
+try:
+    from itapz_notify import append_notify
+except ImportError:
+    append_notify = None
 
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:3000").rstrip("/")
 API_KEY = os.environ.get("API_KEY", "")
@@ -100,16 +106,22 @@ class Rcon:
     def online_players(self):
         """Elenco dei giocatori connessi (comando `players`).
 
-        Output tipico:
+        L'output cambia fra versioni: il piu' comune e':
             Players connected (1):
             -giacculu
+        ma i nomi possono avere prefissi diversi ("[01]", "•", "1.", spazi).
+        Si scarta l'intestazione e si normalizza il resto, cosi' un nome non
+        letto non fa dichiarare "offline" un giocatore che c'e'.
         """
         reply = self.command("players")
         names = []
         for line in reply.splitlines():
-            line = line.strip()
-            if line.startswith("-"):
-                names.append(line[1:].strip())
+            s = line.strip()
+            if not s or "connected" in s.lower():
+                continue
+            nome = re.sub(r"^[-•>*\[\]\(\),\d\s:]+", "", s).strip()
+            if nome:
+                names.append(nome)
         return names
 
     def close(self):
@@ -182,13 +194,14 @@ def main():
                 print(f"{status}: {player} <- {item} x{qty} :: {reply}")
                 if ok:
                     # Messaggio privato in gioco: la mod lo consegna solo a lui.
-                    etichetta = (d.get("message") or item).strip()
-                    append_notify(
-                        NOTIFY_PATH,
-                        f"delivery-{d['id']}",
-                        player,
-                        f"Hai ricevuto: {etichetta} x{qty}",
-                    )
+                    if append_notify is not None:
+                        etichetta = (d.get("message") or item).strip()
+                        append_notify(
+                            NOTIFY_PATH,
+                            f"delivery-{d['id']}",
+                            player,
+                            f"Hai ricevuto: {etichetta} x{qty}",
+                        )
             except Exception as e:
                 status, reply = "FAILED", str(e)
                 print(f"FAILED: {player} <- {item} :: {reply}", file=sys.stderr)
