@@ -1,10 +1,14 @@
 # /etc/sudoers.d/itapz  —  installare con:  sudo visudo -f /etc/sudoers.d/itapz
 #
-# L'agent puo' SOLO avviare/fermare/riavviare l'unita' del server di gioco.
-# Nessun altro privilegio: niente shell, niente comandi arbitrari.
+# L'agent puo' SOLO avviare/fermare/riavviare l'unita' del server di gioco e
+# lanciare lo script che aggiorna i propri file. Nessun altro privilegio:
+# niente shell, niente comandi arbitrari.
 Cmnd_Alias ITAPZ_PZ = /usr/bin/systemctl start pzserver, \
                       /usr/bin/systemctl stop pzserver, \
                       /usr/bin/systemctl restart pzserver
 
+# Aggiorna bridge, agent e rewards in /usr/local/bin dalla versione pubblicata.
+Cmnd_Alias ITAPZ_UPDATE = /usr/local/bin/itapz-update.sh
+
 # L'utente deve essere lo stesso di User= in itapz-agent.service.
-administrator ALL=(ALL) NOPASSWD: ITAPZ_PZ
+administrator ALL=(ALL) NOPASSWD: ITAPZ_PZ, ITAPZ_UPDATE

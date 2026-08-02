@@ -261,14 +261,31 @@ def _systemctl_unit(action, unit):
 
 
 def sync_agents(_payload=None):
-    """Riavvia bridge e agent, per applicare modifiche a config/dati dal pannello.
+    """Aggiorna bridge, agent e rewards dalla versione pubblicata, poi riavvia.
 
-    Il bridge (pipeline dati) si riavvia subito. L'agent si riavvia da solo
-    DOPO aver risposto: un restart sincrono qui ucciderebbe questo processo
-    prima di mandare l'esito, e il comando resterebbe PENDING. Si lancia
-    staccato, con un piccolo ritardo.
+    Scarica gli script piu' recenti del repo ITAPz-Sync in /usr/local/bin (via
+    sudo, con lo script installatore dedicato) e riavvia bridge e agent. Il
+    rewards e' un cron: la prossima corsa usera' il file nuovo.
+
+    L'agent si riavvia da solo DOPO aver risposto: un restart sincrono qui
+    ucciderebbe questo processo prima di mandare l'esito, e il comando
+    resterebbe PENDING. Si lancia staccato, con un piccolo ritardo.
     """
     messaggi = []
+    try:
+        esito = subprocess.run(
+            ["sudo", "-n", "/usr/local/bin/itapz-update.sh"],
+            capture_output=True, text=True, timeout=180,
+        )
+        output = (esito.stdout or "").strip()
+        if not output:
+            output = "nessun aggiornamento"
+        messaggi.append(f"aggiornamento: {output}")
+        if esito.returncode != 0:
+            messaggi.append(f"aggiornamento: esito {esito.returncode}")
+    except Exception as e:
+        messaggi.append(f"aggiornamento NON riuscito: {e}")
+
     try:
         messaggi.append(_systemctl_unit("restart", BRIDGE_SERVICE))
     except Exception as e:
