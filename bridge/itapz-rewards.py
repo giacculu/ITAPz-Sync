@@ -9,7 +9,7 @@ Nessuna dipendenza esterna: implementa il protocollo Source RCON con la sola
 libreria standard.
 
 Uso (cron, ogni minuto):
-  * * * * * SITE_URL=http://localhost:3000 RCON_PASSWORD=xxx /usr/local/bin/itapz-rewards.py >> /var/log/itapz-rewards.log 2>&1
+  * * * * * SITE_URL=http://localhost:3000 ZOMBOID_DIR=/home/administrator/Zomboid RCON_PASSWORD=xxx /usr/local/bin/itapz-rewards.py >> /var/log/itapz-rewards.log 2>&1
 
 Variabili:
   SITE_URL       URL del sito ITAPz            (default http://localhost:3000)
@@ -17,7 +17,9 @@ Variabili:
   RCON_HOST      host del server PZ            (default 127.0.0.1)
   RCON_PORT      porta RCON                    (default 27015)
   RCON_PASSWORD  password RCON                 (obbligatoria)
-  ZOMBOID_DIR    cartella dati del gioco       (default ~/Zomboid)
+  ZOMBOID_DIR    cartella dati del gioco       (default ~/Zomboid). Impostala
+                 esplicitamente: se il cron gira da root, "~" e' /root, e la
+                 notifica in gioco finirebbe nel posto sbagliato.
   NOTIFY_PATH    file delle notifiche private  (default
                  $ZOMBOID_DIR/Lua/ITAPz_Notify.txt)
 """
@@ -50,6 +52,7 @@ NOTIFY_PATH = os.environ.get("NOTIFY_PATH", os.path.join(ZOMBOID_DIR, "Lua", "IT
 
 SERVERDATA_AUTH = 3
 SERVERDATA_EXECCOMMAND = 2
+SERVERDATA_AUTH_RESPONSE = 2
 
 
 class RconError(Exception):
@@ -57,10 +60,19 @@ class RconError(Exception):
 
 
 class Rcon:
-    """Client minimale del protocollo Source RCON."""
+    """Client del protocollo Source RCON.
+
+    Le risposte di Project Zomboid possono arrivare su piu' pacchetti, e nel
+    buffer possono restare pacchetti di richieste precedenti: leggere un solo
+    pacchetto per comando disallinea le risposte (un `players` che esce come
+    reply di un `additem`, un reply vuoto al comando giusto...). Stesso pattern
+    dell'agent: si tengono solo i pacchetti con l'id di questa richiesta e si
+    continua a leggere finche' il socket tace.
+    """
 
     def __init__(self, host, port, password, timeout=10):
         self.sock = socket.create_connection((host, port), timeout=timeout)
+        self.timeout = timeout
         self.req_id = 0
         self._auth(password)
 
@@ -88,20 +100,61 @@ class Rcon:
         return buf
 
     def _auth(self, password):
-        req_id = self._send(SERVERDATA_AUTH, password)
-        res_id, _, _ = self._recv()
-        # alcuni server rispondono con un pacchetto vuoto prima dell'auth
-        if res_id == -1:
-            raise RconError("password RCON errata")
-        if res_id != req_id:
-            res_id, _, _ = self._recv()
+        """Autentica consumando TUTTI i pacchetti dell'auth.
+
+        Il protocollo risponde all'autenticazione con due pacchetti: un
+        RESPONSE_VALUE vuoto e poi l'AUTH_RESPONSE. Leggerne uno solo
+        lasciava l'altro nel buffer, e il comando successivo se lo ritrovava
+        come propria prima risposta. Si riconosce dal TIPO, non dall'id.
+        """
+        self._send(SERVERDATA_AUTH, password)
+
+        for _ in range(4):  # limite di sicurezza
+            res_id, res_type, _ = self._recv()
             if res_id == -1:
                 raise RconError("password RCON errata")
+            if res_type == SERVERDATA_AUTH_RESPONSE:
+                return
+        raise RconError("autenticazione RCON senza risposta riconoscibile")
 
     def command(self, cmd):
-        self._send(SERVERDATA_EXECCOMMAND, cmd)
-        _, _, body = self._recv()
-        return body.strip()
+        """Esegue un comando e restituisce l'output completo.
+
+        Si scartano i pacchetti con un id diverso da questa richiesta (resti
+        nel buffer) e si continua a leggere finche' il socket tace, perche' PZ
+        spezza le risposte lunghe su piu' pacchetti.
+        """
+        req_id = self._send(SERVERDATA_EXECCOMMAND, cmd)
+
+        chunks = []
+        scartati = 0
+        try:
+            while True:
+                res_id, _, body = self._recv()
+                if res_id == req_id:
+                    chunks.append(body)
+                    break
+                scartati += 1
+                if scartati > 4:
+                    return ""
+        except (socket.timeout, TimeoutError):
+            return ""
+
+        self.sock.settimeout(0.6)
+        try:
+            while True:
+                res_id, _, more = self._recv()
+                if res_id == req_id:
+                    chunks.append(more)
+        except (socket.timeout, TimeoutError, OSError, struct.error):
+            pass
+        finally:
+            try:
+                self.sock.settimeout(self.timeout)
+            except OSError:
+                pass
+
+        return "".join(chunks).strip()
 
     def online_players(self):
         """Elenco dei giocatori connessi (comando `players`).
