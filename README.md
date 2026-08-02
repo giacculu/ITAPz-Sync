@@ -175,16 +175,15 @@ dato personale.
 
 ## Struttura
 
+La mod **non sta in questo repo**: vive nella cartella Workshop locale
+(`Zomboid/Workshop/ITAPz_Sync`) e si aggiorna con l'uploader del gioco (vedi
+[WORKSHOP-UPLOAD.md](WORKSHOP-UPLOAD.md)). Qui restano solo bridge e agent:
+
 ```
-ITAPz_Sync/
-├── mod.info, poster.png          # root
-├── common/                       # vuota (richiesta da B42)
-└── 42/
-    ├── mod.info, poster.png
-    └── media/lua/server/ITAPz_DataSync.lua
-bridge/itapz-bridge.sh            # estrae i dati dal log e li invia (cron + curl)
+bridge/itapz-bridge.sh            # estrae i dati dal log e li invia (servizio systemd)
 bridge/itapz-rewards.py           # consegna gli oggetti riscattati via RCON (cron)
-workshop.txt                      # metadati Steam Workshop
+bridge/itapz-agent.py             # esegue i comandi del pannello via systemd/RCON
+bridge/itapz_notify.py            # coda delle notifiche private lette dalla mod
 ```
 
 ## Licenza

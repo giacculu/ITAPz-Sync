@@ -5,13 +5,13 @@ non da riga di comando: PZ ha un uploader Workshop integrato.
 
 ## 1. Prepara la cartella Workshop
 
-Crea questa struttura dentro la cartella dati di Zomboid del tuo PC
-(`C:\Users\<Utente>\Zomboid\Workshop\`):
+La mod vive gia' pronta in `C:\Users\<Utente>\Zomboid\Workshop\ITAPz_Sync\`
+(stessa struttura qui sotto): niente da copiare da nessun repo.
 
 ```
 Zomboid/Workshop/ITAPz_Sync/
-├── workshop.txt                      ← da mod/workshop.txt
-├── preview.png                       ← anteprima (copia di mod/ITAPz_Sync/poster.png)
+├── workshop.txt                      ← metadati Steam Workshop (ID 3774019032)
+├── preview.png                       ← anteprima
 └── Contents/
     └── mods/
         └── ITAPz_Sync/
@@ -21,9 +21,9 @@ Zomboid/Workshop/ITAPz_Sync/
             └── 42/                          ← contenuto specifico Build 42
                 ├── mod.info
                 ├── poster.png
-                └── media/lua/server/
-                    ├── ITAPz_DataSync.lua
-                    └── ITAPz_Probe.lua
+                └── media/
+                    ├── server/ITAPz_DataSync.lua
+                    └── client/ITAPz_Notify.lua
 ```
 
 > **Build 42**: la nuova gerarchia `42/` + `common/` (vuota) è **obbligatoria** —
@@ -32,9 +32,9 @@ Zomboid/Workshop/ITAPz_Sync/
 > `mod.info`, `poster.png` vanno dentro `42/` (con copia di mod.info/poster
 > anche nella root del mod).
 
-In pratica: copia l'intera cartella `mod/ITAPz_Sync/` di questo repo (ha già la
-struttura B42) dentro `Contents/mods/`, e assicurati che `common/` resti vuota
-(nel repo contiene solo un `.gitkeep` segnaposto — cancellalo nella copia).
+In pratica: la mod vive gia' in `Zomboid/Workshop/ITAPz_Sync` con la struttura B42
+pronta (common/ e 42/). Prima dell'upload assicurati solo che `common/` sia
+**completamente vuota** (l'uploader B42 la pretende tale).
 
 ## 2. Carica da dentro il gioco
 
