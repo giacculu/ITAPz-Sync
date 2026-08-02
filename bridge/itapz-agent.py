@@ -18,6 +18,9 @@ Comandi supportati:
   NOTIFY        accoda un messaggio PRIVATO in gioco per un giocatore (payload
                 JSON {id, username, message}); la mod lo consegna a quel solo
                 giocatore
+  READ_VPS_FILE / WRITE_VPS_FILE  legge/scrive gli env di agent e bridge e il
+                file cron (payload: chiave, o {file, content}), via sudo con
+                lo script itapz-vps-config e solo sulle chiavi ammesse
 
 L'agent tiene anche aggiornato l'elenco delle zone che la mod usa per dire
 "sei arrivato a Rosewood": lo scarica dal sito e lo scrive dove la mod lo
@@ -679,6 +682,44 @@ def push_log():
         print(f"ERRORE invio log: {e}", file=sys.stderr)
 
 
+# File di configurazione VPS che il pannello puo' leggere/scrivere. L'agent li
+# tocca SOLO via /usr/local/bin/itapz-vps-config (sudo), che accetta queste
+# chiavi e mai percorsi arbitrari.
+VPS_FILE_MAP = {
+    "agent_env": "/etc/itapz-agent.env",
+    "bridge_env": "/etc/itapz-bridge.env",
+    "cron": "/etc/cron.d/itapz",
+}
+
+
+def _vps_config(*args, contenuto=None):
+    try:
+        esito = subprocess.run(
+            ["sudo", "-n", "/usr/local/bin/itapz-vps-config", *args],
+            input=contenuto,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as e:
+        raise RuntimeError(f"itapz-vps-config non eseguibile: {e}")
+    if esito.returncode != 0:
+        raise RuntimeError((esito.stderr or "").strip() or f"esito {esito.returncode}")
+    return esito.stdout
+
+
+def vps_file_read(chiave):
+    if chiave not in VPS_FILE_MAP:
+        raise RuntimeError(f"chiave non ammessa: {chiave}")
+    return _vps_config("read", chiave)
+
+
+def vps_file_write(chiave, contenuto):
+    if chiave not in VPS_FILE_MAP:
+        raise RuntimeError(f"chiave non ammessa: {chiave}")
+    return _vps_config("write", chiave, contenuto=contenuto)
+
+
 def notify_player(payload):
     """NOTIFY: accoda un messaggio privato per un giocatore.
 
@@ -715,6 +756,14 @@ def execute(cmd):
         return write_config(cmd["payload"])
     if t == "NOTIFY":
         return notify_player(cmd.get("payload"))
+    if t == "READ_VPS_FILE":
+        return vps_file_read(str(cmd.get("payload") or "").strip())
+    if t == "WRITE_VPS_FILE":
+        try:
+            data = json.loads(cmd.get("payload") or "{}")
+        except Exception as e:
+            raise RuntimeError(f"WRITE_VPS_FILE: payload JSON non valido ({e})")
+        return vps_file_write(str(data.get("file") or ""), str(data.get("content") or ""))
     if t == "WIPE":
         return run_wipe(cmd.get("payload"))
     if t == "DELETE_CHARACTER":
