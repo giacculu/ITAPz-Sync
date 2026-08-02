@@ -716,10 +716,53 @@ def push_zone():
         print(f"ERRORE scrittura zone: {e}", file=sys.stderr)
 
 
+_ultime_disband = 0.0
+DISBAND_SECONDS = int(os.environ.get("DISBAND_SECONDS", "60"))
+
+
+def push_disband():
+    """Scarica l'elenco delle fazioni rimosse e lo scrive dove la mod lo legge.
+
+    Mirror della blocklist del sito: la mod prova a sciogliere ogni fazione
+    elencata. Anche un elenco vuoto va scritto — cosi' una fazione ripristinata
+    esce dal file e la mod smette. Si riscrive solo se cambia.
+    """
+    global _ultime_disband
+    ora = time.monotonic()
+    if ora - _ultime_disband < DISBAND_SECONDS:
+        return
+    _ultime_disband = ora
+
+    try:
+        req = urllib.request.Request(f"{SITE_URL}/api/factions/blocklist")
+        if API_KEY:
+            req.add_header("X-API-Key", API_KEY)
+        with urllib.request.urlopen(req, timeout=10) as risposta:
+            testo = risposta.read().decode("utf-8")
+    except Exception as e:
+        print(f"ERRORE scaricamento blocklist fazioni: {e}", file=sys.stderr)
+        return
+
+    percorso = os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Disband.txt")
+    try:
+        if os.path.exists(percorso):
+            with open(percorso, "r", encoding="utf-8") as f:
+                if f.read() == testo:
+                    return
+        os.makedirs(os.path.dirname(percorso), exist_ok=True)
+        with open(percorso, "w", encoding="utf-8", newline="\n") as f:
+            f.write(testo)
+        n = len([r for r in testo.splitlines() if r.strip()])
+        print(f"blocklist fazioni aggiornata: {n} nomi in {percorso}")
+    except Exception as e:
+        print(f"ERRORE scrittura blocklist fazioni: {e}", file=sys.stderr)
+
+
 def tick():
     push_heartbeat()
     push_log()
     push_zone()
+    push_disband()
 
     try:
         data = http_json(f"{SITE_URL}/api/server-control")
