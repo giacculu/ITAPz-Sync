@@ -36,6 +36,34 @@ def _unlock(f):
         fcntl.flock(f, fcntl.LOCK_UN)
 
 
+def append_line(path, line, max_lines=MAX_LINES):
+    """Appende una riga al file (con lock e tetto di righe).
+
+    Serve per le code semplici una-riga-un-pezzo, come il file dei reset: la
+    mod le legge e le consuma; le righe vecchie si possono scartare.
+    """
+    line = str(line).replace("\r", " ").replace("\n", " ").strip()
+    if not line:
+        return
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a+", encoding="utf-8", newline="\n") as f:
+        _lock(f)
+        try:
+            f.seek(0)
+            lines = f.read().splitlines()
+            lines.append(line)
+            if len(lines) > max_lines:
+                lines = lines[-max_lines:]
+            f.seek(0)
+            f.truncate()
+            f.write("\n".join(lines) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        finally:
+            _unlock(f)
+
+
 def append_notify(path, notif_id, username, message):
     """Appende una notifica al file (con lock e tetto di righe).
 
@@ -47,20 +75,4 @@ def append_notify(path, notif_id, username, message):
     notif_id = str(notif_id).replace("\t", " ").replace("\n", " ").strip()
     if not notif_id or not username or not message:
         return
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a+", encoding="utf-8", newline="\n") as f:
-        _lock(f)
-        try:
-            f.seek(0)
-            lines = f.read().splitlines()
-            lines.append(f"{notif_id}\t{username}\t{message}")
-            if len(lines) > MAX_LINES:
-                lines = lines[-MAX_LINES:]
-            f.seek(0)
-            f.truncate()
-            f.write("\n".join(lines) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        finally:
-            _unlock(f)
+    append_line(path, f"{notif_id}\t{username}\t{message}")

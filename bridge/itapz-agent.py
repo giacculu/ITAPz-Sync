@@ -59,7 +59,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from itapz_notify import append_notify
+from itapz_notify import append_notify, append_line
 
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:3000").rstrip("/")
 API_KEY = os.environ.get("API_KEY", "")
@@ -81,6 +81,9 @@ ZOMBOID_DIR = os.environ.get(
 )
 # File delle notifiche private: la mod lo legge da Zomboid/Lua/.
 NOTIFY_PATH = os.environ.get("NOTIFY_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Notify.txt"))
+# File dei reset richiesti alla mod (vedi delete_character): quando un
+# personaggio viene eliminato, la mod ripulisce i suoi marcatori dal ModData.
+RESET_PATH = os.environ.get("RESET_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Reset.txt"))
 WIPE_BACKUP_DIR = os.environ.get("WIPE_BACKUP_DIR", os.path.join(ZOMBOID_DIR, "wipe-backup"))
 LOG_LINES = int(os.environ.get("LOG_LINES", "300"))
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
@@ -536,6 +539,14 @@ def delete_character(payload):
         quanti = _cancella_da_db(account_db, username, "account (file)", fatte)
         if quanti == 0:
             fatte.append(f'account (file): nessuna riga per "{username}"')
+
+    # I marcatori della mod (flag degli achievement, zone, notifiche) vivono nel
+    # ModData del mondo, che la cancellazione dei soli personaggi non tocca: un
+    # nuovo personaggio con lo stesso nome ritroverebbe i flag vecchi e gli
+    # achievement-flag scatterebbero subito. Lo si segnala alla mod, che li
+    # ripulisce al prossimo avvio del server.
+    append_line(RESET_PATH, username)
+    fatte.append(f"reset marcatori per {username}")
 
     fatte.append(run_systemctl("start"))
     return "\n".join(fatte)
