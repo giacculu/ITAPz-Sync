@@ -167,8 +167,8 @@ def main():
         return 1
 
     try:
-        # additem funziona solo su giocatori connessi: chi è offline resta in
-        # coda (PENDING) e verrà servito al prossimo accesso.
+        # additem funziona solo su giocatori connessi: chi e' offline resta in
+        # coda (PENDING) e verra' servito al prossimo accesso.
         try:
             online = rcon.online_players()
         except Exception as e:
@@ -181,7 +181,13 @@ def main():
             item = d["itemId"]
             qty = int(d.get("quantity", 1) or 1)
 
-            if player.lower() not in online_lower:
+            # Chi e' online lo dice il sito (il sync della mod usa
+            # getOnlinePlayers): l'output di `players` via RCON cambia formato
+            # fra versioni e puo' non riportare i nomi. Il flag del sito ha la
+            # precedenza; RCON resta solo come ripiego.
+            online_ora = bool(d.get("online")) or player.lower() in online_lower
+
+            if not online_ora:
                 print(f"IN ATTESA: {player} offline, {item} resta in coda")
                 continue
 
