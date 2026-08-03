@@ -509,6 +509,10 @@ def delete_character(payload):
     username = str(opz.get("username") or "").strip()
     if not username:
         raise RuntimeError("nessun personaggio indicato")
+    # Anti command injection: username finisce in un comando RCON tra
+    # virgolette; caratteri pericolosi e si spezza il comando.
+    if re.search(r'["\n\r`;$\\\x00]', username):
+        raise RuntimeError(f"username non valido per il comando RCON: {username!r}")
     anche_account = opz.get("account", False)
 
     db = _db_personaggi()

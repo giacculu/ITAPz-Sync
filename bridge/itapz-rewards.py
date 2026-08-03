@@ -35,6 +35,15 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Caratteri che spezzerebbero un comando RCON se finissero dentro le
+# virgolette (additem "nome" "item"): un valore con uno di questi e' da
+# scartare, non da inviare.
+DANGER = re.compile(r'["\n\r`;$\\\x00]')
+
+
+def rcon_safe(*valori):
+    return all(not DANGER.search(str(v or "")) for v in valori)
+
 # La notifica privata in gioco e' un bonus: se il modulo non c'e' (VPS non
 # ancora aggiornata) la consegna dell'oggetto DEVE comunque funzionare.
 try:
@@ -261,6 +270,21 @@ def main():
 
             if not online_ora:
                 print(f"IN ATTESA: {player} offline, {item} resta in coda")
+                continue
+
+            # Anti command injection: i valori finiscono dentro un comando RCON
+            # tra virgolette. Un '"' o ';' romperebbe il comando e potrebbe
+            # eseguirne un altro. Un valore non sicuro e' un errore vero: FAILED.
+            if not rcon_safe(player, item):
+                print(f"INVALIDO: valori non sicuri per RCON ({player} <- {item})", file=sys.stderr)
+                try:
+                    http_json(
+                        f"{SITE_URL}/api/rewards/complete",
+                        method="POST",
+                        payload={"id": d["id"], "status": "FAILED", "message": "Valori non sicuri per il comando RCON"},
+                    )
+                except Exception:
+                    pass
                 continue
 
             cmd = f'additem "{player}" "{item}" {qty}'
