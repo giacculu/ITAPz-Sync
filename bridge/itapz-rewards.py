@@ -204,25 +204,6 @@ def http_json(url, method="GET", payload=None):
         return json.loads(raw) if raw else {}
 
 
-def player_missing_reply(low, player):
-    """Il reply di `additem` dice che e' il GIOCATORE a non esserci?
-
-    Se nel reply compare il nome del giocatore accanto a un "non trovato",
-    o il testo parla esplicitamente di un player inesistente, e' il giocatore
-    che manca — non l'oggetto — e la consegna deve RESTARE in coda, non
-    fallire. L'oggetto sbagliato e' invece un errore vero (FAILED).
-    """
-    p = player.lower()
-    for esc in (f'"{p}"', f"'{p}'"):
-        if esc in low and any(w in low for w in ("not found", "unknown", "no such", "exist")):
-            return True
-    return any(
-        w in low
-        for w in ("player not found", "no such player", "no player",
-                  "cannot find player", "unable to find player", "player does not exist")
-    )
-
-
 def main():
     if not RCON_PASSWORD:
         print("ERRORE: RCON_PASSWORD non impostata", file=sys.stderr)
@@ -296,32 +277,39 @@ def main():
                     status = "DELIVERED"
                     print(f"{status}: {player} <- {item} x{qty} :: {reply}")
                     # Messaggio privato in gioco: la mod lo consegna solo a lui.
+                    # Se fallisce non deve far saltare il resto del batch.
                     if append_notify is not None:
-                        etichetta = (d.get("message") or item).strip()
-                        append_notify(
-                            NOTIFY_PATH,
-                            f"delivery-{d['id']}",
-                            player,
-                            f"Hai ricevuto: {etichetta} x{qty}",
-                        )
+                        try:
+                            etichetta = (d.get("message") or item).strip()
+                            append_notify(
+                                NOTIFY_PATH,
+                                f"delivery-{d['id']}",
+                                player,
+                                f"Hai ricevuto: {etichetta} x{qty}",
+                            )
+                        except Exception as e:
+                            print(f"avviso: notifica privata non inviata per {player}: {e}", file=sys.stderr)
                 else:
-                    # Se a mancare e' il GIOCATORE — nome non rintracciato da
-                    # RCON o disconnessione di mezzo secondo — non e' un
-                    # fallimento, e' solo presto: la consegna resta in coda e
-                    # riprovera' al prossimo giro. Si dichiara FAILED solo se
-                    # l'additem e' andato storto davvero (es. oggetto errato).
-                    if online_lower:
-                        assente = player.lower() not in online_lower
+                    # Solo l'oggetto inesistente e' un errore vero (FAILED): si
+                    # riconosce dal reply che cita l'item come non trovato.
+                    # Tutto il resto — giocatore non rintracciato, dubbio — e'
+                    # solo presto: la consegna resta in coda e riprova al giro
+                    # successivo, anche se il giocatore e' stato offline a lungo.
+                    low_item = item.lower()
+                    item_manco = low_item in low and any(
+                        w in low for w in ("not found", "unknown", "no such", "invalid", "does not exist")
+                    )
+                    if item_manco:
+                        status = "FAILED"
+                        print(f"FAILED: {player} <- {item} x{qty} :: {reply}")
                     else:
-                        assente = player_missing_reply(low, player)
-                    if assente:
                         print(f"IN ATTESA: {player} non rintracciato da RCON, {item} resta in coda")
                         continue
-                    status = "FAILED"
-                    print(f"FAILED: {player} <- {item} x{qty} :: {reply}")
             except Exception as e:
-                status, reply = "FAILED", str(e)
-                print(f"FAILED: {player} <- {item} :: {reply}", file=sys.stderr)
+                # Timeout/errore di rete RCON: transitorio. La ricompensa NON
+                # si deve perdere: resta in coda e riprova al prossimo giro.
+                print(f"IN ATTESA: errore RCON per {player} <- {item}: {e} — resta in coda", file=sys.stderr)
+                continue
 
             try:
                 http_json(
