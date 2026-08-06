@@ -18,8 +18,6 @@ Comandi supportati:
   NOTIFY        accoda un messaggio PRIVATO in gioco per un giocatore (payload
                 JSON {id, username, message}); la mod lo consegna a quel solo
                 giocatore
-  BROADCAST     accoda un messaggio per TUTTI i giocatori (payload message);
-                `servermsg` via RCON non funziona in B42, la mod lo inoltra
   READ_VPS_FILE / WRITE_VPS_FILE  legge/scrive gli env di agent e bridge e il
                 file cron (payload: chiave, o {file, content}), via sudo con
                 lo script itapz-vps-config e solo sulle chiavi ammesse
@@ -86,9 +84,6 @@ ZOMBOID_DIR = os.environ.get(
 )
 # File delle notifiche private: la mod lo legge da Zomboid/Lua/.
 NOTIFY_PATH = os.environ.get("NOTIFY_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Notify.txt"))
-# File dei messaggi per TUTTI i giocatori (preavvisi di riavvii e wipe):
-# `servermsg` via RCON non funziona in Build 42, la mod legge questo file.
-BROADCAST_PATH = os.environ.get("BROADCAST_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Broadcast.txt"))
 # File dei reset richiesti alla mod (vedi delete_character): quando un
 # personaggio viene eliminato, la mod ripulisce i suoi marcatori dal ModData.
 RESET_PATH = os.environ.get("RESET_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_Reset.txt"))
@@ -749,23 +744,6 @@ def notify_player(payload):
     return f"notifica privata accodata per {username}"
 
 
-def broadcast_to_all(payload):
-    """BROADCAST: accoda un messaggio per TUTTI i giocatori online.
-
-    `servermsg` via RCON non funziona in Build 42 (il server chiude la
-    connessione e il messaggio non parte), quindi il preavviso di riavvii e
-    wipe passa da qui: una riga in Zomboid/Lua/ITAPz_Broadcast.txt, che la mod
-    legge e inoltra a tutti con sendServerCommand. Formato: <id>\t<message>.
-    """
-    data = json.loads(payload or "{}") if isinstance(payload, str) else (payload or {})
-    message = str(data.get("message") or "").strip() if isinstance(data, dict) else str(payload or "").strip()
-    if not message:
-        raise RuntimeError("BROADCAST: message obbligatorio")
-    notif_id = str(data.get("id") or "").strip() if isinstance(data, dict) and "id" in data else f"broadcast-{int(time.time())}-{os.getpid()}"
-    append_line(BROADCAST_PATH, f"{notif_id}\t{message}")
-    return f"messaggio accodato per tutti i giocatori"
-
-
 def execute(cmd):
     t = cmd["type"]
     if t == "RCON":
@@ -782,8 +760,6 @@ def execute(cmd):
         return write_config(cmd["payload"])
     if t == "NOTIFY":
         return notify_player(cmd.get("payload"))
-    if t == "BROADCAST":
-        return broadcast_to_all(cmd.get("payload"))
     if t == "READ_VPS_FILE":
         return vps_file_read(str(cmd.get("payload") or "").strip())
     if t == "WRITE_VPS_FILE":
