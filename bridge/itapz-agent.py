@@ -981,6 +981,15 @@ def tick():
     push_disband()
 
     try:
+        check_mods()
+    except Exception as e:
+        print(f"ERRORE check mod: {e}", file=sys.stderr)
+    try:
+        scadenza_mod_restart()
+    except Exception as e:
+        print(f"ERRORE scadenza mod restart: {e}", file=sys.stderr)
+
+    try:
         data = http_json(f"{SITE_URL}/api/server-control")
     except Exception as e:
         print(f"ERRORE lettura coda: {e}", file=sys.stderr)

@@ -162,3 +162,39 @@ def test_scadenza_file_resta_se_la_post_fallisce(monkeypatch, tmp_path):
     esito = agent.scadenza_mod_restart(ora=1500.0)
     assert os.path.exists(agent.MOD_RESTART_PATH), "il file deve restare per riprovare"
     assert "riprovera'" in esito
+
+
+def test_tick_chiama_check_e_scadenza(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    visti = []
+
+    def finto_rcon(cmd):
+        visti.append(("rcon", cmd))
+        return "No mods need update"
+
+    def finto_http(url, method="GET", payload=None):
+        if url.endswith("/api/server-control"):
+            return {"commands": []}
+        return {}
+
+    def finto_check(ora=None):
+        visti.append(("check", ora))
+        return "check"
+
+    def finto_scadenza(ora=None):
+        visti.append(("scadenza", ora))
+        return "scadenza"
+
+    monkeypatch.setattr(agent, "run_rcon", finto_rcon)
+    monkeypatch.setattr(agent, "http_json", finto_http)
+    monkeypatch.setattr(agent, "check_mods", finto_check)
+    monkeypatch.setattr(agent, "scadenza_mod_restart", finto_scadenza)
+    monkeypatch.setattr(agent, "push_heartbeat", lambda: None)
+    monkeypatch.setattr(agent, "push_log", lambda: None)
+    monkeypatch.setattr(agent, "push_zone", lambda: None)
+    monkeypatch.setattr(agent, "push_disband", lambda: None)
+
+    agent.tick()
+
+    assert any(k == "check" for k, _ in visti), "il tick deve fare il check mod"
+    assert any(k == "scadenza" for k, _ in visti), "il tick deve gestire la scadenza"
