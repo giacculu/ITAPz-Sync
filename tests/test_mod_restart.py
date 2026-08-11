@@ -28,6 +28,7 @@ def test_non_rileva_output_pulito(monkeypatch, tmp_path):
     agent = carica_agent(monkeypatch, tmp_path)
     assert not agent.rileva_mod_aggiornamento("No mods need update")
     assert not agent.rileva_mod_aggiornamento("")
+    assert not agent.rileva_mod_aggiornamento("CheckModsNeedUpdate: Mods updated")
 
 
 def test_check_mods_preavvisa_e_salva(monkeypatch, tmp_path):

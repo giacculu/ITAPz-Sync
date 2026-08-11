@@ -95,7 +95,10 @@ ZONE_SECONDS = int(os.environ.get("ZONE_SECONDS", "600"))
 MOD_CHECK_MINUTES = int(os.environ.get("MOD_CHECK_MINUTES", "10"))
 MOD_RESTART_MINUTES = int(os.environ.get("MOD_RESTART_MINUTES", "5"))
 MOD_NEED_UPDATE_RE = os.environ.get("MOD_NEED_UPDATE_RE", r"(?i)need update")
-MOD_NO_UPDATE_RE = os.environ.get("MOD_NO_UPDATE_RE", r"(?i)no mods? need update")
+MOD_NO_UPDATE_RE = os.environ.get(
+    "MOD_NO_UPDATE_RE",
+    r"(?i)(no mods? need update|mods updated|all mods? updated)",
+)
 MOD_RESTART_PATH = os.environ.get(
     "MOD_RESTART_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_ModRestart.txt")
 )
