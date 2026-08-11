@@ -981,11 +981,15 @@ def tick():
     push_disband()
 
     try:
-        check_mods()
+        esito = check_mods()
+        if esito:
+            print(f"mod check: {esito}")
     except Exception as e:
         print(f"ERRORE check mod: {e}", file=sys.stderr)
     try:
-        scadenza_mod_restart()
+        esito = scadenza_mod_restart()
+        if esito:
+            print(f"mod restart: {esito}")
     except Exception as e:
         print(f"ERRORE scadenza mod restart: {e}", file=sys.stderr)
 

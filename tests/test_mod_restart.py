@@ -195,3 +195,19 @@ def test_tick_chiama_check_e_scadenza(monkeypatch, tmp_path):
 
     assert any(k == "check" for k, _ in visti), "il tick deve fare il check mod"
     assert any(k == "scadenza" for k, _ in visti), "il tick deve gestire la scadenza"
+
+
+def test_tick_stampa_lesito_del_check(monkeypatch, tmp_path, capsys):
+    agent = carica_agent(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(agent, "check_mods", lambda ora=None: "mod check: nessuna mod da aggiornare")
+    monkeypatch.setattr(agent, "scadenza_mod_restart", lambda ora=None: "")
+    monkeypatch.setattr(agent, "http_json", lambda *a, **k: {"commands": []})
+    monkeypatch.setattr(agent, "push_heartbeat", lambda: None)
+    monkeypatch.setattr(agent, "push_log", lambda: None)
+    monkeypatch.setattr(agent, "push_zone", lambda: None)
+    monkeypatch.setattr(agent, "push_disband", lambda: None)
+
+    agent.tick()
+
+    assert "mod check: nessuna mod da aggiornare" in capsys.readouterr().out
