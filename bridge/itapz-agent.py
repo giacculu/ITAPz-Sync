@@ -92,6 +92,13 @@ LOG_LINES = int(os.environ.get("LOG_LINES", "300"))
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
 HEARTBEAT_SECONDS = int(os.environ.get("HEARTBEAT_SECONDS", "15"))
 ZONE_SECONDS = int(os.environ.get("ZONE_SECONDS", "600"))
+MOD_CHECK_MINUTES = int(os.environ.get("MOD_CHECK_MINUTES", "10"))
+MOD_RESTART_MINUTES = int(os.environ.get("MOD_RESTART_MINUTES", "5"))
+MOD_NEED_UPDATE_RE = os.environ.get("MOD_NEED_UPDATE_RE", r"(?i)need update")
+MOD_NO_UPDATE_RE = os.environ.get("MOD_NO_UPDATE_RE", r"(?i)no mods? need update")
+MOD_RESTART_PATH = os.environ.get(
+    "MOD_RESTART_PATH", os.path.join(ZOMBOID_DIR, "Lua", "ITAPz_ModRestart.txt")
+)
 
 # --- RCON (protocollo Source, solo libreria standard) -----------------------
 import socket
@@ -228,6 +235,18 @@ def run_rcon(cmd):
         return rcon.command(cmd) or "(nessun output)"
     finally:
         rcon.close()
+
+
+def rileva_mod_aggiornamento(output):
+    """True se l'output di checkModsNeedUpdate parla di mod da aggiornare.
+
+    Il positivo contiene "Need Update" (case-insensitive); il negativo e'
+    "No mods need update", che la conterrebbe comunque: lo si esclude prima.
+    Le regex si calibrano dall'env senza toccare il codice."""
+    testo = output or ""
+    if re.search(MOD_NO_UPDATE_RE, testo):
+        return False
+    return bool(re.search(MOD_NEED_UPDATE_RE, testo))
 
 
 def run_systemctl(action):
