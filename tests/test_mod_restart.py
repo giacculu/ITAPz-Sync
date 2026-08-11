@@ -111,3 +111,54 @@ def test_check_mods_rcon_non_risponde(monkeypatch, tmp_path):
     esito = agent.check_mods(ora=1000.0)
     assert not os.path.exists(agent.MOD_RESTART_PATH)
     assert "fallito" in esito
+
+
+def test_scadenza_accoda_il_restart(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    with open(agent.MOD_RESTART_PATH, "w", encoding="utf-8") as f:
+        f.write("1000")
+
+    inviati = []
+
+    def finto_http(url, method="GET", payload=None):
+        if url.endswith("/api/server-control/schedule"):
+            inviati.append(payload)
+            return {"ok": True, "id": "abc"}
+        return {}
+
+    monkeypatch.setattr(agent, "http_json", finto_http)
+
+    esito = agent.scadenza_mod_restart(ora=1500.0)
+
+    assert len(inviati) == 1
+    assert inviati[0] == {"type": "RESTART", "requestedBy": "mod da aggiornare"}
+    assert not os.path.exists(agent.MOD_RESTART_PATH)
+    assert "accodato" in esito
+
+
+def test_scadenza_non_ancora_maturata(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    with open(agent.MOD_RESTART_PATH, "w", encoding="utf-8") as f:
+        f.write("2000")
+
+    inviati = []
+    monkeypatch.setattr(
+        agent, "http_json", lambda *a, **k: inviati.append(1) or {}
+    )
+    agent.scadenza_mod_restart(ora=1500.0)
+    assert not inviati, "prima del target non si accoda nulla"
+    assert os.path.exists(agent.MOD_RESTART_PATH)
+
+
+def test_scadenza_file_resta_se_la_post_fallisce(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    with open(agent.MOD_RESTART_PATH, "w", encoding="utf-8") as f:
+        f.write("1000")
+
+    def finto_http(*a, **k):
+        raise RuntimeError("sito giu'")
+
+    monkeypatch.setattr(agent, "http_json", finto_http)
+    esito = agent.scadenza_mod_restart(ora=1500.0)
+    assert os.path.exists(agent.MOD_RESTART_PATH), "il file deve restare per riprovare"
+    assert "riprovera'" in esito

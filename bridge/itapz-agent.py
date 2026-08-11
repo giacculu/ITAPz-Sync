@@ -308,6 +308,34 @@ def check_mods(ora=None):
     return "mod check: riavvio per mod aggiornate pendente"
 
 
+def scadenza_mod_restart(ora=None):
+    """Alla scadenza dei MOD_RESTART_MINUTES accoda il RESTART alla coda del sito.
+
+    Se la POST fallisce il file resta: al tick successivo si riprova. Il
+    RESTART passa dalla coda comandi del sito, quindi notifica Discord e
+    audit arrivano da soli."""
+    now = ora if ora is not None else time.time()
+    target = _scadenza_pendente()
+    if target is None or now < target:
+        return ""
+
+    try:
+        http_json(
+            f"{SITE_URL}/api/server-control/schedule",
+            method="POST",
+            payload={"type": "RESTART", "requestedBy": "mod da aggiornare"},
+        )
+    except Exception as e:
+        print(f"mod restart: accodamento fallito ({e})", file=sys.stderr)
+        return "mod restart: accodamento fallito, si riprovera'"
+
+    try:
+        os.remove(MOD_RESTART_PATH)
+    except OSError:
+        pass
+    return "mod restart: RESTART accodato al sito"
+
+
 def run_systemctl(action):
     """start/stop/restart dell'unita' del server (sudoers ristretto)."""
     if action not in ("start", "stop", "restart"):
