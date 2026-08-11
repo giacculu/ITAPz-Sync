@@ -249,6 +249,65 @@ def rileva_mod_aggiornamento(output):
     return bool(re.search(MOD_NEED_UPDATE_RE, testo))
 
 
+_ultimo_mod_check = 0.0
+
+
+def _scadenza_pendente():
+    """Timestamp target del riavvio pendente, o None."""
+    try:
+        with open(MOD_RESTART_PATH, "r", encoding="utf-8") as f:
+            testo = f.read().strip()
+            if testo.isdigit():
+                return int(testo)
+    except (FileNotFoundError, OSError):
+        pass
+    return None
+
+
+def check_mods(ora=None):
+    """Check periodico di mod da aggiornare (al piu' ogni MOD_CHECK_MINUTES).
+
+    Con mod da aggiornare e nessun riavvio gia' pendente: preavviso in gioco,
+    salvataggio immediato del mondo e file persistente con il timestamp del
+    riavvio. Ritorna un messaggio per il log."""
+    global _ultimo_mod_check
+    now = ora if ora is not None else time.time()
+    if now - _ultimo_mod_check < MOD_CHECK_MINUTES * 60:
+        return ""
+    _ultimo_mod_check = now
+
+    if _scadenza_pendente() is not None:
+        return "riavvio mod gia' pendente"
+
+    try:
+        output = run_rcon("checkModsNeedUpdate")
+    except Exception as e:
+        print(f"mod check: RCON non risponde ({e})", file=sys.stderr)
+        return "mod check fallito"
+
+    if not rileva_mod_aggiornamento(output):
+        return "mod check: nessuna mod da aggiornare"
+
+    try:
+        run_rcon(
+            f'servermsg "Mod da aggiornare: riavvio automatico tra '
+            f'{MOD_RESTART_MINUTES} minuti. Il mondo viene salvato adesso."'
+        )
+        run_rcon("save")
+    except Exception as e:
+        print(f"mod check: preavviso/save fallito ({e})", file=sys.stderr)
+
+    try:
+        os.makedirs(os.path.dirname(MOD_RESTART_PATH), exist_ok=True)
+        with open(MOD_RESTART_PATH, "w", encoding="utf-8", newline="\n") as f:
+            f.write(str(int(now + MOD_RESTART_MINUTES * 60)))
+    except OSError as e:
+        print(f"mod check: scrittura file pendente fallita ({e})", file=sys.stderr)
+        return "mod check: riavvio programmato ma file non scritto"
+
+    return "mod check: riavvio per mod aggiornate pendente"
+
+
 def run_systemctl(action):
     """start/stop/restart dell'unita' del server (sudoers ristretto)."""
     if action not in ("start", "stop", "restart"):

@@ -31,3 +31,83 @@ def test_non_rileva_output_pulito(monkeypatch, tmp_path):
     agent = carica_agent(monkeypatch, tmp_path)
     assert not agent.rileva_mod_aggiornamento("No mods need update")
     assert not agent.rileva_mod_aggiornamento("")
+
+
+def test_check_mods_preavvisa_e_salva(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    chiamate = []
+
+    def finto_rcon(cmd):
+        chiamate.append(cmd)
+        if cmd == "checkModsNeedUpdate":
+            return "Some mods Need Update"
+        return "ok"
+
+    monkeypatch.setattr(agent, "run_rcon", finto_rcon)
+    monkeypatch.setattr(agent, "_ultimo_mod_check", 0.0)
+
+    esito = agent.check_mods(ora=1000.0)
+
+    assert any(c.startswith("servermsg") and "riavvio" in c for c in chiamate)
+    assert "save" in chiamate
+    assert "checkModsNeedUpdate" in chiamate
+    assert os.path.exists(agent.MOD_RESTART_PATH)
+    contenuto = open(agent.MOD_RESTART_PATH, encoding="utf-8").read().strip()
+    atteso = int(1000 + agent.MOD_RESTART_MINUTES * 60)
+    assert int(contenuto) == atteso
+    assert "pendente" in esito
+
+
+def test_check_mods_non_ripete_se_gia_pendente(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    chiamate = []
+
+    def finto_rcon(cmd):
+        chiamate.append(cmd)
+        return "Some mods Need Update"
+
+    with open(agent.MOD_RESTART_PATH, "w", encoding="utf-8") as f:
+        f.write("2000")
+
+    monkeypatch.setattr(agent, "run_rcon", finto_rcon)
+    monkeypatch.setattr(agent, "_ultimo_mod_check", 0.0)
+
+    agent.check_mods(ora=1000.0)
+
+    assert "save" not in chiamate, "con un riavvio gia' pendente non si risalva"
+    assert not any(c.startswith("servermsg") for c in chiamate)
+
+
+def test_check_mods_niente_di_nuovo(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        agent, "run_rcon", lambda cmd: "No mods need update"
+    )
+    monkeypatch.setattr(agent, "_ultimo_mod_check", 0.0)
+    esito = agent.check_mods(ora=1000.0)
+    assert not os.path.exists(agent.MOD_RESTART_PATH)
+    assert "nessuna" in esito
+
+
+def test_check_mods_rispetta_il_timer(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+    chiamate = []
+    monkeypatch.setattr(
+        agent, "run_rcon", lambda cmd: (chiamate.append(cmd), "Some Need Update")[1]
+    )
+    monkeypatch.setattr(agent, "_ultimo_mod_check", 500.0)
+    agent.check_mods(ora=505.0)  # 5 secondi dopo: meno di MOD_CHECK_MINUTES
+    assert not chiamate, "il check non deve girare prima dell'intervallo"
+
+
+def test_check_mods_rcon_non_risponde(monkeypatch, tmp_path):
+    agent = carica_agent(monkeypatch, tmp_path)
+
+    def finto_rcon(cmd):
+        raise RuntimeError("server spento")
+
+    monkeypatch.setattr(agent, "run_rcon", finto_rcon)
+    monkeypatch.setattr(agent, "_ultimo_mod_check", 0.0)
+    esito = agent.check_mods(ora=1000.0)
+    assert not os.path.exists(agent.MOD_RESTART_PATH)
+    assert "fallito" in esito
