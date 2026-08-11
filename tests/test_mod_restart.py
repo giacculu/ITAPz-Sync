@@ -1,10 +1,7 @@
 """Riavvio automatico per mod da aggiornare, provato sull'agent vero."""
 
 import os
-import sys
 import importlib.util
-
-import pytest
 
 BRIDGE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "bridge", "itapz-agent.py"
