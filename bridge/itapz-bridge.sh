@@ -94,6 +94,7 @@ MARK_FILE="$ZOMBOID_DIR/.itapz_bridge_mark"
 # potesse piu' sovrascriverli: "Permission denied" e riavvio in ciclo.
 TMP_DIR="${TMPDIR:-/tmp}/itapz-bridge-$(id -u)"
 mkdir -p "$TMP_DIR"
+battito
 TMP_PAYLOAD="$TMP_DIR/payload.json"
 TMP_NEW="$TMP_DIR/new.txt"
 TMP_RESP="$TMP_DIR/risposta.txt"
@@ -228,8 +229,6 @@ TMP_RESP="$TMP_DIR/risposta.txt"
     echo "$(date '+%F %T') FALLITO http=$HTTP_CODE $(cat "$TMP_RESP" 2>/dev/null)"
     return 1
   fi
-
-  battito
 }
 
 # --- avvio ------------------------------------------------------------------
