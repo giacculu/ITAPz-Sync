@@ -62,6 +62,28 @@ silenzioso() {
   fi
 }
 
+# --- battito verso il sito ----------------------------------------------------
+# Il sito mostra la salute della catena: il bridge manda un battito al massimo
+# una volta al minuto (il giro gira ogni 2s, scrivere al sito a ogni giro non
+# servirebbe). L'errore non deve fermare il loop.
+BATTITO_SECONDI="${BATTITO_SECONDI:-60}"
+ULTIMO_BATTITO=0
+
+battito() {
+  ADESSO=$(date +%s)
+  if [ -f "$TMP_DIR/heartbeat" ]; then
+    ULTIMO_BATTITO=$(cat "$TMP_DIR/heartbeat" 2>/dev/null || echo 0)
+  fi
+  if [ "$((ADESSO - ULTIMO_BATTITO))" -ge "$BATTITO_SECONDI" ]; then
+    echo "$ADESSO" > "$TMP_DIR/heartbeat"
+    curl -sS -o /dev/null \
+      -X POST "$SITE_URL/api/component-heartbeat" \
+      -H 'Content-Type: application/json' \
+      ${API_KEY:+-H "X-API-Key: $API_KEY"} \
+      --data '{"id":"bridge"}' --max-time 10 >/dev/null 2>&1 || true
+  fi
+}
+
 giro() {
 
 STATE_FILE="$ZOMBOID_DIR/.itapz_bridge_last"
@@ -206,6 +228,8 @@ TMP_RESP="$TMP_DIR/risposta.txt"
     echo "$(date '+%F %T') FALLITO http=$HTTP_CODE $(cat "$TMP_RESP" 2>/dev/null)"
     return 1
   fi
+
+  battito
 }
 
 # --- avvio ------------------------------------------------------------------
