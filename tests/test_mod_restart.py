@@ -211,4 +211,6 @@ def test_tick_stampa_lesito_del_check(monkeypatch, tmp_path, capsys):
 
     agent.tick()
 
-    assert "mod check: nessuna mod da aggiornare" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "mod check: nessuna mod da aggiornare" in out
+    assert "mod check: mod check:" not in out, "il prefisso non va duplicato"

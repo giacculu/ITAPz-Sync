@@ -986,15 +986,15 @@ def tick():
     try:
         esito = check_mods()
         if esito:
-            print(f"mod check: {esito}")
+            print(esito, flush=True)
     except Exception as e:
-        print(f"ERRORE check mod: {e}", file=sys.stderr)
+        print(f"ERRORE check mod: {e}", file=sys.stderr, flush=True)
     try:
         esito = scadenza_mod_restart()
         if esito:
-            print(f"mod restart: {esito}")
+            print(esito, flush=True)
     except Exception as e:
-        print(f"ERRORE scadenza mod restart: {e}", file=sys.stderr)
+        print(f"ERRORE scadenza mod restart: {e}", file=sys.stderr, flush=True)
 
     try:
         data = http_json(f"{SITE_URL}/api/server-control")
