@@ -209,6 +209,18 @@ def main():
         print("ERRORE: RCON_PASSWORD non impostata", file=sys.stderr)
         return 1
 
+    # Battito verso il sito: il cron gira ogni minuto, questo dice al pannello
+    # che il rewards e' vivo anche con la coda vuota. Un errore qui non deve
+    # fermare la consegna.
+    try:
+        http_json(
+            f"{SITE_URL}/api/component-heartbeat",
+            method="POST",
+            payload={"id": "rewards"},
+        )
+    except Exception as e:
+        print(f"avviso: battito rewards non inviato ({e})", file=sys.stderr)
+
     try:
         data = http_json(f"{SITE_URL}/api/rewards/pending")
     except urllib.error.HTTPError as e:
